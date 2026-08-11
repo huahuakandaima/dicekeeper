@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { parseYaml } from '../../src/rules.ts';
 import { serializeYaml } from '../../src/yaml-write.ts';
+import { DRAG_GUARD } from './drag-guard';
 import type { EditorOpenResult, PackMeta, CheckResult } from './global.d.ts';
 
 // —— 通用递归值编辑器（表单 ↔ 对象 双向绑定）——
@@ -312,7 +313,7 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
   const distTiers: [string, string][] = [['crit_fail', '大失败'], ['extreme', '极限'], ['hard', '困难'], ['normal', '普通'], ['fail', '失败']];
 
   return (
-    <div className="modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="modal" onClick={(e) => { if (e.target === e.currentTarget && !DRAG_GUARD.isDrag(e)) onClose(); }} onMouseDownCapture={DRAG_GUARD.onMouseDownCapture}>
       <div className="modal-body modal-wide editor-modal" onClick={(e) => e.stopPropagation()}>
         <h2>
           ✏️ 编辑{type === 'rule' ? '规则包' : '剧本包'}：{meta.name}

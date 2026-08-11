@@ -27,6 +27,8 @@ function summarizeChange(c: { actor: string; kind: string; target: string; befor
   return `${actor} 手动操作`;
 }
 
+import { DRAG_GUARD } from './drag-guard';
+
 export function App() {
   const [campaigns, setCampaigns] = useState<{ id: string; name: string; pcCount: number; msgs?: number; tokens?: number }[]>([]);
   const [campaignId, setCampaignId] = useState<string | null>(null);
@@ -367,10 +369,11 @@ export function App() {
     window.dk.room.onClosed(() => { setJoinState('idle'); setRoomPlayers([]); setRoomJoined(false); setNotice('已离开房间'); });
   }, []);
 
-  // 弹窗遮罩点击关闭：仅当点击目标是遮罩本身（非弹窗内容）且没有正在拖选文本时关闭，
+  // 弹窗遮罩点击关闭：仅当点击目标是遮罩本身（非弹窗内容）且没有拖选文本时关闭，
   // 防止"选中文字复制时鼠标拖到遮罩上松开"导致弹窗误关（反馈 bug 修复）
   function onModalMask(e: React.MouseEvent, close: () => void) {
     if (e.target !== e.currentTarget) return;
+    if (DRAG_GUARD.isDrag(e)) return; // 拖选文字（mousedown/mouseup 距离大）不关闭
     const sel = window.getSelection();
     if (sel && sel.toString().trim().length > 0) return;
     close();
@@ -936,7 +939,7 @@ export function App() {
 
       {/* P5 联机弹窗（房主开房 / 玩家加入） */}
       {roomModal && (
-        <div className="modal" onClick={(e) => onModalMask(e, () => setRoomModal(false))}>
+        <div className="modal" onClick={(e) => onModalMask(e, () => setRoomModal(false))} onMouseDownCapture={DRAG_GUARD.onMouseDownCapture}>
           <div className="modal-body" onClick={(e) => e.stopPropagation()}>
             <h2>局域网联机</h2>
             <p className="hint">房主开房后，同一网络（或 Tailscale / ZeroTier 虚拟局域网）内的玩家输入「地址:端口」加入。掷骰判定与 AI 叙事全在房主本地执行，玩家为轻量端。</p>
@@ -992,7 +995,7 @@ export function App() {
       )}
 
       {showNew && (
-        <div className="modal" onClick={(e) => onModalMask(e, () => setShowNew(false))}>
+        <div className="modal" onClick={(e) => onModalMask(e, () => setShowNew(false))} onMouseDownCapture={DRAG_GUARD.onMouseDownCapture}>
           <div className={`modal-body${editMode ? ' modal-wide' : ''}`} onClick={(e) => e.stopPropagation()}>
             <h2>新建战役</h2>
             <label>战役名称
@@ -1077,7 +1080,7 @@ export function App() {
       )}
 
       {pendingDel && (
-        <div className="modal" onClick={(e) => onModalMask(e, () => setPendingDel(null))}>
+        <div className="modal" onClick={(e) => onModalMask(e, () => setPendingDel(null))} onMouseDownCapture={DRAG_GUARD.onMouseDownCapture}>
           <div className="modal-body" onClick={(e) => e.stopPropagation()}>
             <h2>删除战役</h2>
             <p>确定删除「{pendingDel.name}」？其全部角色、对话记录、世界状态将一并删除，<b>无法恢复</b>。</p>
@@ -1090,7 +1093,7 @@ export function App() {
       )}
 
       {editModal === 'existing' && editSpec && charFields && (
-        <div className="modal" onClick={(e) => onModalMask(e, () => setEditModal(null))}>
+        <div className="modal" onClick={(e) => onModalMask(e, () => setEditModal(null))} onMouseDownCapture={DRAG_GUARD.onMouseDownCapture}>
           <div className="modal-body modal-wide" onClick={(e) => e.stopPropagation()}>
             <h2>编辑角色卡</h2>
             <CharEdit fields={charFields} spec={editSpec} derived={editDerived} onChange={setEditSpec} />
@@ -1107,7 +1110,7 @@ export function App() {
       )}
 
       {showSettings && (
-        <div className="modal" onClick={(e) => onModalMask(e, () => setShowSettings(false))}>
+        <div className="modal" onClick={(e) => onModalMask(e, () => setShowSettings(false))} onMouseDownCapture={DRAG_GUARD.onMouseDownCapture}>
           <div className="modal-body settings-modal" onClick={(e) => e.stopPropagation()}>
             <h2>设置</h2>
             <div className="settings-tabs">
@@ -1364,7 +1367,7 @@ export function App() {
       )}
 
       {importPending && (
-        <div className="modal" onClick={(e) => { if (e.target === e.currentTarget) setImportPending(null); }}>
+        <div className="modal" onClick={(e) => { if (e.target === e.currentTarget && !DRAG_GUARD.isDrag(e)) setImportPending(null); }} onMouseDownCapture={DRAG_GUARD.onMouseDownCapture}>
           <div className="modal-body" onClick={(e) => e.stopPropagation()}>
             <h2>内容包已存在</h2>
             <p>
