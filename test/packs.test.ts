@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { serializeYaml } from '../src/yaml-write.ts';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => readFileSync(p, 'utf-8');
-import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
+import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
 import { loadScenarioPack } from '../src/scenario.ts';
 import { loadRulePack, parseYaml } from '../src/rules.ts';
 
@@ -328,4 +328,17 @@ test('normalizeGeneratedPack：attributes 空元素清理 + 全空回退模板',
   const norm2 = normalizeGeneratedPack('rule', ai2, '末世规则');
   const cs2 = norm2.character_sheet as Record<string, unknown>;
   assert.ok(Array.isArray(cs2.attributes) && (cs2.attributes as string[]).length >= 4, '全空回退模板属性');
+});
+
+// AI 输出清洗：tab→空格、去行尾空白、CRLF 统一、多余空行压缩
+test('sanitizeAiYaml：清洗后可通过严格解析器', () => {
+  const dirty = 'id: test\nname: 测试\t\nworld:\n\tsummary: 世界观\n\n\nlore_entries:\n  - id: l1\n';
+  const clean = sanitizeAiYaml(dirty);
+  assert.ok(!clean.includes('\t'), 'tab 已转空格');
+  assert.ok(!clean.includes('\r'), 'CRLF 已统一');
+  assert.ok(!clean.includes('\n\n\n'), '多余空行已压缩');
+  // 清洗后的内容能通过严格解析（tab 缩进是"缩进异常"主因）
+  const parsed = parseYaml(clean) as Record<string, unknown>;
+  assert.equal(parsed.id, 'test');
+  assert.equal(parsed.name, '测试');
 });

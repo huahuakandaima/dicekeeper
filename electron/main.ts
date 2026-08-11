@@ -36,7 +36,7 @@ import { OpenAiCompatibleProvider, MockProvider, type Provider } from '../src/ga
 import { runChat, extractNarrativePrefix } from '../src/gateway/chat.ts';
 import { buildSystemPrompt } from '../src/gateway/prompt.ts';
 import type { ToolContext } from '../src/gateway/tools.ts';
-import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, loadImportedRulePack, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, type PackMeta, type PackSummary } from '../src/packs.ts';
+import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, loadImportedRulePack, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, type PackMeta, type PackSummary } from '../src/packs.ts';
 import { PRESET_PERSONAS, renderPersona, validatePersona, findPersona, type Persona } from '../src/personas.ts';
 import { checkOllama, listOllamaModels, pullOllamaModel, downloadFile, recommendModel, OLLAMA_DOWNLOAD_URL, OLLAMA_OPENAI_URL } from '../src/ollama.ts';
 import { HWINFO_PS_SCRIPT, parseHwInfo } from '../src/hwinfo.ts';
@@ -1165,13 +1165,14 @@ ipcMain.handle('editor:testLore', (_e, req: { obj: unknown; text: string; budget
 // 剧本包 target: pack | npc | location | world | lore | encounter | hooks
 // 规则包 target: rule-pack（整包骨架）
 function extractYaml(text: string): string {
-  const m = /```(?:yaml|yml)?\s*([\s\S]*?)```/.exec(text);
-  if (m) return m[1];
-  const i = text.indexOf('id:');
-  if (i >= 0) return text.slice(i);
-  // 单点生成可能无顶层 id：找常见字段名
-  const j = text.indexOf('npc_seeds:');
-  if (j >= 0) return text.slice(j);
+  // 优先取代码块（可能有多个，取最长的一个——AI 偶尔重复输出）
+  const blocks = [...text.matchAll(/```(?:yaml|yml)?\s*([\s\S]*?)```/g)].map((m) => m[1]);
+  if (blocks.length > 0) return blocks.reduce((a, b) => (b.length > a.length ? b : a));
+  // 无代码块：找顶层字段起点（id 优先，单点生成找具体字段）
+  for (const key of ['id:', 'npc_seeds:', 'locations:', 'world:', 'lore_entries:', 'encounters:', 'hooks:', 'character_sheet:', 'check_rules:']) {
+    const i = text.indexOf(key);
+    if (i >= 0) return text.slice(i);
+  }
   return text;
 }
 const AI_TARGET_FIELD: Record<string, string> = {
@@ -1327,15 +1328,30 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
       `主题/需求：${String(req?.prompt ?? '克苏鲁风格悬疑剧本')}`,
       target === 'adjust' && req?.prevDraft ? `现有草稿：\n${req.prevDraft}` : null,
     ].filter(Boolean).join('\n\n');
-    const res = await provider.chat(
-      [
-        { role: 'system', content: system },
-        { role: 'user', content: userParts },
-      ],
-      [],
-      { temperature: 0.7, maxTokens: 3000 },
-    );
-    const yaml = extractYaml(res.content ?? '');
+    // AI 输出不可控：清洗（tab/行尾空白）+ 解析失败自动重试 1 次（LLM 偶尔缩进不齐，自研解析器严格）
+    let yaml = '';
+    let parseErr: Error | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await provider.chat(
+        [
+          { role: 'system', content: system },
+          { role: 'user', content: userParts + (attempt > 0 ? '\n\n（提示：上次输出 YAML 解析失败，请严格两空格缩进、输出纯 YAML、不要任何解释文字或 markdown 代码块标记）' : '') },
+        ],
+        [],
+        { temperature: 0.7, maxTokens: 3000 },
+      );
+      yaml = sanitizeAiYaml(extractYaml(res.content ?? ''));
+      try {
+        parseYaml(yaml);
+        parseErr = null;
+        break;
+      } catch (e) {
+        parseErr = e as Error;
+      }
+    }
+    if (parseErr) {
+      return { ok: false, error: `AI 输出的 YAML 格式有问题（已自动重试 1 次仍失败）：${parseErr.message}。建议稍后点「生成」重试` };
+    }
     if (target === 'pack' || target === 'rule-pack' || target === 'scenario-from-rule' || target === 'adjust') {
       // 整包：AI 输出兜底规范化（缺 id/name/空字段用模板补全）→ 完整校验
       const raw = parseYaml(yaml) as Record<string, unknown>;

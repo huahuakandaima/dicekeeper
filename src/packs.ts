@@ -6,6 +6,17 @@
 import { mkdirSync, readFileSync, writeFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseYaml, validateRulePack, type RulePack } from './rules.ts';
+
+// AI 生成 YAML 清洗（自研解析器严格：恰好 2 空格缩进、禁 tab）：
+// tab→2 空格、去行尾空白、统一换行、压缩多余空行——降低"缩进异常"解析失败率
+export function sanitizeAiYaml(src: string): string {
+  return src
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((l) => l.replace(/\t/g, '  ').replace(/[ \t]+$/, ''))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
 import { validateScenarioPack, type ScenarioPack } from './scenario.ts';
 import { serializeYaml } from './yaml-write.ts';
 import { adjudicate } from './adjudicate.ts';
