@@ -36,7 +36,7 @@ import { OpenAiCompatibleProvider, MockProvider, type Provider } from '../src/ga
 import { runChat, extractNarrativePrefix } from '../src/gateway/chat.ts';
 import { buildSystemPrompt } from '../src/gateway/prompt.ts';
 import type { ToolContext } from '../src/gateway/tools.ts';
-import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, loadImportedRulePack, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, parseAiOutput, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, type PackMeta, type PackSummary } from '../src/packs.ts';
+import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, loadImportedRulePack, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, parseAiOutput, genPackId, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, type PackMeta, type PackSummary } from '../src/packs.ts';
 import { PRESET_PERSONAS, renderPersona, validatePersona, findPersona, type Persona } from '../src/personas.ts';
 import { checkOllama, listOllamaModels, pullOllamaModel, downloadFile, recommendModel, OLLAMA_DOWNLOAD_URL, OLLAMA_OPENAI_URL } from '../src/ollama.ts';
 import { HWINFO_PS_SCRIPT, parseHwInfo } from '../src/hwinfo.ts';
@@ -426,12 +426,21 @@ function lanAddresses(): string[] {
 }
 
 // 房主收到玩家行动：玩家消息立即显示在房主 UI → 进串行队列（多人正确性：一次只处理一条，保证顺序、避免并发写库）→ 逐条走本地引擎全流程 → 广播
-let roomQueue: { p: RoomPlayerInfo; text: string }[] = [];
+// 队列项：text 行动文本；source 发言人名（玩家消息落库带 [昵称] 前缀，房主消息为 undefined 不加前缀）；resolve/reject 供房主 chat:send 等待结果
+type PlayerTurnResult = { narrative: string; diceResults: string[]; issues: { kind: string; message: string }[]; messageId?: number; promptPlayer?: string | null };
+let roomQueue: { text: string; source?: string; resolve?: (r: PlayerTurnResult) => void; reject?: (e: Error) => void }[] = [];
 let roomProcessing = false;
+
+function enqueueRoomTurn(item: { text: string; source?: string }): Promise<PlayerTurnResult> {
+  return new Promise((resolve, reject) => {
+    roomQueue.push({ ...item, resolve, reject });
+    void drainRoomQueue();
+  });
+}
 
 async function handleRoomPlayerChat(p: RoomPlayerInfo, text: string): Promise<void> {
   mainWindow?.webContents.send('room:hostUser', { name: p.name, text });
-  roomQueue.push({ p, text });
+  roomQueue.push({ text, source: p.name });
   void drainRoomQueue();
 }
 
@@ -442,13 +451,15 @@ async function drainRoomQueue(): Promise<void> {
     while (roomQueue.length > 0) {
       const item = roomQueue.shift()!;
       try {
-        const r = await runPlayerTurn(item.text, undefined, item.p.name);
+        const r = await runPlayerTurn(item.text, undefined, item.source);
         const payload = { text: r.narrative, dice: r.diceResults, prompt: r.promptPlayer ?? null };
         room?.broadcast('narrative', payload);
         mainWindow?.webContents.send('room:hostNarrative', payload);
+        item.resolve?.(r);
       } catch (e) {
         const msg = (e as Error).message.replace(/^Error invoking remote method '[^']+':\s*/, '');
         room?.broadcast('system', { text: `处理失败：${msg}` });
+        item.reject?.(e as Error);
       }
     }
   } finally {
@@ -488,6 +499,9 @@ ipcMain.handle('room:close', async () => {
     await roomServer.close().catch(() => {});
     roomServer = null;
   }
+  // 关房清理队列状态（防残留：下次开房不应继承旧队列/处理标记）
+  for (const item of roomQueue) item.reject?.(new Error('房间已关闭'));
+  roomQueue = [];
   mainWindow?.webContents.send('room:players', { players: [], notice: '房间已关闭' });
   return { ok: true };
 });
@@ -827,7 +841,7 @@ ipcMain.handle('check:skill', (_e, args: { skill: string; mode?: 'normal' | 'rew
 
 // 玩家回合主链路（chat:send 与 check:withChat 共用）：落库 → 记忆/lore 组装 → 流式 AI 叙事 → 兜底 → 摘要触发
 // action：玩家可见文本（落库/恢复历史/提及检测用）；aiAction：AI 指令（默认=action；检定场景分离，避免内部指令泄漏给玩家）
-async function runPlayerTurn(action: string, aiAction?: string, source?: string): Promise<{ narrative: string; diceResults: string[]; issues: { kind: string; message: string }[]; messageId?: number; promptPlayer?: string | null }> {
+async function runPlayerTurn(action: string, aiAction?: string, source?: string): Promise<PlayerTurnResult> {
   if (!activeCampaignId) throw new Error('还没有当前战役：请先在左侧「新建战役」或选择一个已有战役');
   if (!activeSessionId) throw new Error('还没有当前会话：请先选择/新建战役，系统会自动开始会话');
   const campaign = store.loadCampaign(activeCampaignId);
@@ -999,7 +1013,9 @@ function fallbackNarrative(action: string, provider: Provider, raw: string): str
 }
 
 // —— IPC：对话（AI 网关全链路）——
-ipcMain.handle('chat:send', (_e, action: string) => runPlayerTurn(String(action ?? '')));
+// 房主开房时：房主消息也进串行队列（与玩家消息统一，防并发写库）；单机照旧直走
+ipcMain.handle('chat:send', (_e, action: string) =>
+  room ? enqueueRoomTurn({ text: String(action ?? '') }) : runPlayerTurn(String(action ?? '')));
 
 // 检定接剧情（方案 §5 会话流程：本地判定 → 结果附进请求 → AI 基于结果叙事）：
 // 本地执行检定（审计）→ 推送 chat:check 供 UI 立即显示 → AI 继续剧情（流式）
@@ -1108,13 +1124,12 @@ ipcMain.handle('packs:delete', (_e, type: 'rule' | 'scenario', id: string) => {
 function packMetaById(type: 'rule' | 'scenario', id: string): PackMeta | null {
   return (type === 'rule' ? listRulePacks() : listScenarioPacks()).find((m) => m.id === id) ?? null;
 }
-// 打开编辑器：返回解析后的对象（表单用）+ 序列化 YAML（源码视图用）
 // 新建内容包：生成合法最小模板 → 校验 → 落盘 → 返回 meta（前端拿到后打开编辑器）
 ipcMain.handle('editor:create', (_e, req: { type?: 'rule' | 'scenario'; name?: string }) => {
   const type: 'rule' | 'scenario' = req?.type === 'scenario' ? 'scenario' : 'rule';
   const rawName = String(req?.name ?? '').trim().slice(0, 20);
   const name = rawName || (type === 'rule' ? '新规则包' : '新剧本包');
-  const id = `${type === 'rule' ? 'rule' : 'scen'}-${Date.now().toString(36)}`;
+  const id = genPackId(type);
   try {
     const obj = buildNewPackTemplate(type, name, id);
     const body = serializePackObject(type, obj as never);
@@ -1126,6 +1141,7 @@ ipcMain.handle('editor:create', (_e, req: { type?: 'rule' | 'scenario'; name?: s
     return { ok: false, error: `创建失败：${(e as Error).message}` };
   }
 });
+// 打开编辑器：返回解析后的对象（表单用）+ 序列化 YAML（源码视图用）
 ipcMain.handle('editor:open', (_e, type: 'rule' | 'scenario', id: string) => {
   const meta = packMetaById(type, id);
   if (!meta) return { ok: false, error: `内容包不存在: ${type}/${id}` };
@@ -1367,10 +1383,16 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
       // 整包：AI 输出兜底规范化（缺 id/name/空字段用模板补全）→ 完整校验
       const normalized = normalizeGeneratedPack(type, raw, String(req?.prompt ?? ''));
       if (requiresId) normalized.requires = requiresId; // 按规则包生成：依赖锁定所选规则包
+      // adjust 迭代：AI 若丢了 requires，恢复原草稿的依赖（锁定贯通：按规则包生成的剧本迭代后仍依赖该包）
+      if (target === 'adjust' && type === 'scenario' && req?.prevDraft) {
+        try {
+          const prev = parsePackObject('scenario', req.prevDraft) as ScenarioPack;
+          if (prev.requires && prev.requires !== normalized.requires) normalized.requires = prev.requires;
+        } catch { /* prevDraft 解析失败忽略 */ }
+      }
       const obj = parsePackObject(type, serializeYaml(normalized));
       return { ok: true, target, draft: obj, yaml: serializePackObject(type, obj), isWhole: true };
     }
-    // 单点：带顶层 key 解析后提取该字段（AI 生成部分，保存时统一校验）
     // 单点：从智能解析结果提取该字段（AI 生成部分，保存时统一校验）
     const field = AI_TARGET_FIELD[target];
     if (!field || !(field in raw)) {

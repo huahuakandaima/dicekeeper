@@ -156,7 +156,7 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
   // AI 生成（§11.8：整包或单点，产出草稿人工确认）；规则包只有「整包骨架」目标，初始值按类型对齐（修复误选 pack 报错）
   const [aiTarget, setAiTarget] = useState(type === 'scenario' ? 'pack' : 'rule-pack');
   const [aiBusy, setAiBusy] = useState(false);
-  const [aiDraft, setAiDraft] = useState<{ target: string; field?: string; yaml: string; obj?: Record<string, unknown> } | null>(null); // 草稿（obj=后端校验过的完整对象，应用时直接使用）
+  const [aiDraft, setAiDraft] = useState<{ target: string; field?: string; yaml: string; obj?: unknown } | null>(null); // 草稿（obj=后端校验过的内容：整包是对象、单点是字段值本身）
   // 按规则包生成剧本包：规则包列表选择（P3b 增强：注入所选规则包技能/属性体系）
   const [rulePacks, setRulePacks] = useState<PackMeta[]>([]);
   const [rulePackId, setRulePackId] = useState('');
@@ -249,7 +249,7 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
     });
     setAiBusy(false);
     if (r.ok) {
-      setAiDraft({ target: r.target ?? aiTarget, field: r.field, yaml: r.yaml ?? '', obj: (r.draft as Record<string, unknown> | undefined) ?? undefined });
+      setAiDraft({ target: r.target ?? aiTarget, field: r.field, yaml: r.yaml ?? '', obj: r.draft ?? undefined });
       setMsg({ kind: 'ok', text: r.isWhole ? '✓ AI 已生成整包草稿，可继续「按意见修改」或直接应用到表单' : `✓ AI 已生成「${targetLabel(r.target ?? aiTarget)}」草稿` });
     } else {
       setMsg({ kind: 'err', text: r.error ?? 'AI 生成失败' });
@@ -264,7 +264,7 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
     const r = await window.dk.editor.aiGenerate({ type, prompt: text, target: 'adjust', prevDraft: aiDraft.yaml });
     setAiBusy(false);
     if (r.ok) {
-      setAiDraft({ target: 'adjust', field: undefined, yaml: r.yaml ?? '', obj: (r.draft as Record<string, unknown> | undefined) ?? undefined });
+      setAiDraft({ target: 'adjust', field: undefined, yaml: r.yaml ?? '', obj: r.draft ?? undefined });
       setAdjustPrompt('');
       setMsg({ kind: 'ok', text: '✓ 已按你的意见修改草稿，检查后「应用到表单」' });
     } else {
@@ -291,7 +291,8 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
         }
       }
     } else {
-      const fieldVal = aiDraft.obj?.[aiDraft.field] ?? (() => {
+      // 单点：后端 draft 就是字段值本身（如 npc_seeds 数组），直接作为新值（勿对字段值再取属性）
+      const fieldVal = aiDraft.obj !== undefined ? aiDraft.obj : (() => {
         try {
           return (parseYaml(aiDraft.yaml) as Record<string, unknown>)[aiDraft.field];
         } catch {

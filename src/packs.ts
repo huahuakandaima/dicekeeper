@@ -263,6 +263,11 @@ export function loadImportedRulePack(store: PackStore, id: string): RulePack | n
   }
 }
 
+// 新包 id 生成（editor:create 与 AI 兜底共用，防两处重复硬编码）
+export function genPackId(type: PackType, aiGenerated = false): string {
+  return `${type === 'rule' ? 'rule' : 'scen'}${aiGenerated ? '-gen' : ''}-${Date.now().toString(36)}`;
+}
+
 // 规则包摘要（P3b 增强：AI「按规则包生成剧本包」用——把属性/技能/检定体系注入生成 prompt，
 // 让 AI 产出的 NPC/线索/世界书贴合该规则体系，而非自由发挥）
 export function summarizeRulePackForPrompt(rulePack: RulePack): string {
@@ -368,7 +373,7 @@ export function normalizeGeneratedPack(type: PackType, raw: Record<string, unkno
     merged[k] = v;
   }
   // 必填标量兜底：id / name 只认 AI 输出（模板占位不顶替），缺失时生成/从需求提取；version / requires 兜底
-  merged.id = typeof raw.id === 'string' && raw.id.trim() ? raw.id : `${type === 'rule' ? 'rule' : 'scen'}-gen-${Date.now().toString(36)}`;
+  merged.id = typeof raw.id === 'string' && raw.id.trim() ? raw.id : genPackId(type, true);
   merged.name = typeof raw.name === 'string' && raw.name.trim() ? raw.name : (prompt.trim().slice(0, 20) || (type === 'rule' ? '未命名规则' : '未命名剧本'));
   if (raw.version === undefined || raw.version === null || raw.version === '') merged.version = '1.0';
   if (type === 'scenario' && (typeof raw.requires !== 'string' || !raw.requires.trim())) merged.requires = 'coc7e';
