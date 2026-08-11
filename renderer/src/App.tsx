@@ -54,8 +54,8 @@ export function App() {
   const [scenarioPacks, setScenarioPacks] = useState<PackMeta[]>([]);
   // 技能按钮类型（规则包 character_sheet.skills[].action：check/narrative/none）——右侧技能栏按此渲染
   const [skillActions, setSkillActions] = useState<Record<string, 'check' | 'narrative' | 'none'>>({});
-  // 主持人称谓（规则包 gm_title：守密人/地下城主/主持人…；"守密人"是 CoC 的叫法）
-  const [gmTitle, setGmTitle] = useState('守密人');
+  // 主持人称谓（规则包 gm_title：守密人/地下城主/主持人…；未设置的规则包缺省"主持人"，"守密人"是 CoC 的叫法）
+  const [gmTitle, setGmTitle] = useState('主持人');
   const [selScenarioId, setSelScenarioId] = useState('');
   const [selRulePackId, setSelRulePackId] = useState(''); // 建团规则包（空=默认 CoC 7e；"不能换规则包"修复）
   const [rulePacksList, setRulePacksList] = useState<{ id: string; name: string; version: string }[]>([]);
@@ -548,7 +548,7 @@ export function App() {
     // 技能按钮类型（按当前战役规则包）：右侧技能栏按 action 渲染检定/叙事行动/不显示
     const f = await window.dk.characters.fields();
     setSkillActions(Object.fromEntries(f.skills.map((s) => [s.name, s.action])));
-    setGmTitle(f.gmTitle ?? '守密人'); // 主持人称谓（规则包 gm_title）
+    setGmTitle(f.gmTitle ?? '主持人'); // 主持人称谓（规则包 gm_title）
     const chars = await window.dk.campaign.characters(id);
     setChar(chars[0] ?? null);
     // 反馈修复：重开战役恢复最近会话的聊天历史（不再每次新建空会话丢记录）
@@ -725,7 +725,7 @@ export function App() {
       {!roomJoined && (
         <aside className="sidebar">
           <h1>🎲 DiceKeeper</h1>
-          <p className="sub">AI 守密人跑团</p>
+              <p className="sub">AI 主持人跑团</p>
           {!sqliteOk && <p className="warn">⚠ SQLite 不可用（需 --experimental-sqlite）</p>}
           <button className="primary" onClick={() => { setShowNew(true); void rerollPreview(); }}>＋ 新建战役</button>
         <div className="campaign-list">

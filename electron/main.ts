@@ -129,6 +129,7 @@ function importPackContent(
       meta = { ...meta, id: opts.newId };
     }
     packStore.save(result.type, meta, dkContent(result.type, body));
+    if (result.type === 'rule') rulePackCache.clear(); // 覆盖导入：清运行时缓存（否则命中旧包）
   } catch (e) {
     return { ok: false, error: `导入失败: ${(e as Error).message}` };
   }
@@ -156,16 +157,16 @@ let activeCampaignId: string | null = null;
 let activeSessionId: string | null = null;
 let mainWindow: BrowserWindow | null = null; // 流式叙事转发目标
 let provider: Provider = new MockProvider('offline', []); // 未配置 API 时离线兜底
-const DEFAULT_PERSONA = '你是克苏鲁跑团的守密人（KP），冷静、克制、营造氛围。用中文叙事，描写注重感官细节，让玩家做选择，不要替玩家做决定。';
+const DEFAULT_PERSONA = '你是主持人，冷静、克制、营造氛围。用中文叙事，描写注重感官细节，让玩家做选择，不要替玩家做决定。';
 
-// GM/主持人称谓：规则包 gm_title 决定（"守密人"是 CoC 的；D&D 用"地下城主"等），缺省"守密人"
+// GM/主持人称谓：规则包 gm_title 决定（"守密人"是 CoC 的；D&D 用"地下城主"等），缺省"主持人"
 function gmTitleOf(rp: RulePack): string {
   const t = rp.gm_title?.trim();
-  return t || '守密人';
+  return t || '主持人';
 }
 // 无自定义人格时的默认人格段：按当前战役规则包的 gm_title 生成（不同规则包主持人叫法不同）
 function defaultPersonaFor(campaignId: string | null): string {
-  let gm = '守密人';
+  let gm = '主持人';
   if (campaignId) {
     try { gm = gmTitleOf(loadRulePackFor(store.loadCampaign(campaignId).rulePackId)); } catch { /* 战役可能已删 */ }
   }
@@ -1185,6 +1186,7 @@ ipcMain.handle('packs:delete', (_e, type: 'rule' | 'scenario', id: string) => {
   if (type === 'scenario' && id === scenario.id) throw new Error('内置剧本包不可删除');
   if (type === 'rule' && id === pack.id) throw new Error('内置规则包不可删除');
   packStore.remove(type, id);
+  if (type === 'rule') rulePackCache.clear(); // 删除规则包：清缓存（否则 loadRulePackFor 命中已删包）
   return { ok: true };
 });
 
@@ -1225,7 +1227,10 @@ ipcMain.handle('editor:open', (_e, type: 'rule' | 'scenario', id: string) => {
 // 保存：校验 → 序列化 → 落盘（内置包另存副本，见 savePackObject）
 ipcMain.handle('editor:save', (_e, req: { type: 'rule' | 'scenario'; id: string; isBuiltin: boolean; obj: unknown }) => {
   if (!req || !req.obj) return { ok: false, error: '缺少编辑对象' };
-  return savePackObject({ type: req.type, id: req.id, isBuiltin: !!req.isBuiltin, obj: req.obj as never, store: packStore });
+  const r = savePackObject({ type: req.type, id: req.id, isBuiltin: !!req.isBuiltin, obj: req.obj as never, store: packStore });
+  // 规则包内容已变：清运行时缓存，否则 loadRulePackFor 命中旧包（"编辑器改完不生效"）
+  if (r.ok && req.type === 'rule') rulePackCache.clear();
+  return r;
 });
 // 试跑：规则包检定模拟（判定本地化同款引擎，改完立即生效）
 ipcMain.handle('editor:testCheck', (_e, req: { obj: unknown; skill: string; value: number; mode?: string }) => {
@@ -1567,7 +1572,7 @@ function createWindow(): void {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: `DiceKeeper v${app.getVersion()} — AI 守密人跑团`,
+    title: `DiceKeeper v${app.getVersion()} — AI 主持人跑团`,
     backgroundColor: '#f5f0e8',
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
@@ -1790,16 +1795,17 @@ function createWindow(): void {
           const f = await window.dk.characters.fields(c.meta.id);
           return JSON.stringify({ action: f.skills[0].action, count: f.skills.length });
         })`);
-        // 主持人称谓（规则包 gm_title）：保存 gm_title=地下城主 → fields 返回；内置 coc7e = 守密人
+        // 主持人称谓（规则包 gm_title）：模板默认主持人 / 自定义地下城主 / 内置 coc7e 守密人
         const r39 = await js(`window.dk.editor.create({ type: 'rule', name: 'E2E GM 称谓包' }).then(async (c) => {
           if (!c.ok || !c.meta) return JSON.stringify({ create: false });
+          const tpl = await window.dk.characters.fields(c.meta.id); // 模板 gm_title=主持人
           const opened = await window.dk.editor.open('rule', c.meta.id);
           opened.obj.gm_title = '地下城主';
           const saved = await window.dk.editor.save({ type: 'rule', id: c.meta.id, isBuiltin: false, obj: opened.obj });
           if (!saved.ok) return JSON.stringify({ save: false, err: saved.error || '' });
           const custom = await window.dk.characters.fields(c.meta.id);
           const builtin = await window.dk.characters.fields('coc7e');
-          return JSON.stringify({ custom: custom.gmTitle, builtin: builtin.gmTitle });
+          return JSON.stringify({ tpl: tpl.gmTitle, custom: custom.gmTitle, builtin: builtin.gmTitle });
         })`);
         // 窗口标题带版本号（用户要求）：preventDefault 后 HTML title 不覆盖，标题 = DiceKeeper v<版本>
         const r38 = win.getTitle();
