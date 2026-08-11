@@ -38,6 +38,24 @@ export function gmTitleOf(rp: { gm_title?: string }): string {
   return rp.gm_title?.trim() || '主持人';
 }
 
+// 衍生公式字段引用检查（Spec 轴：坏包不静默带病运行——保存时给出可见告警；不拒载，兼容老包）
+// 公式引用的标识符不在属性/技能名中（且非 DSL 函数名）→ 运行时该衍生值会回退首属性值，需提示规则作者
+const DSL_FUNC_NAMES = new Set(['floor', 'half', 'fifth', 'advantage', 'disadvantage', 'successes', 'min', 'max']);
+export function checkDerivedFormulas(pack: RulePack): { ok: boolean; unknown: string[] } {
+  const known = new Set<string>([...pack.character_sheet.attributes, ...pack.character_sheet.skills.map((s) => s.name)]);
+  const unknown = new Set<string>();
+  const cg = pack.chargen;
+  if (!cg?.derived_formulas) return { ok: true, unknown: [] };
+  for (const [name, formula] of Object.entries(cg.derived_formulas)) {
+    const ids = String(formula).match(/[\p{L}_][\p{L}\p{N}_]*/gu) ?? [];
+    for (const id of ids) {
+      if (DSL_FUNC_NAMES.has(id) || id === name) continue;
+      if (!known.has(id)) unknown.add(id);
+    }
+  }
+  return { ok: unknown.size === 0, unknown: [...unknown] };
+}
+
 // —— mini YAML ——
 export function parseYaml(src: string): unknown {
   const lines = src.split(/\r?\n/).map((l, i) => ({ raw: l, n: i + 1 }));

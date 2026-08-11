@@ -203,9 +203,9 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
       onSaved(r.meta);
       setMsg({
         kind: 'ok',
-        text: r.savedAs
+        text: (r.savedAs
           ? `✓ 内置包已另存为副本「${r.meta.name}」（id: ${r.savedAs}），原内置包未改动`
-          : `✓ 已保存：${r.meta.name} v${r.meta.version}`,
+          : `✓ 已保存：${r.meta.name} v${r.meta.version}`) + (r.warning ? `\n⚠ ${r.warning}` : ''),
       });
       setDoc({ ...doc, isBuiltin: false });
     } else {

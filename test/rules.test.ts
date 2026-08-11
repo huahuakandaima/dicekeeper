@@ -1,7 +1,7 @@
 // test/rules.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadRulePack, parseYaml, RulePackError, validateRulePack, gmTitleOf } from '../src/rules.ts';
+import { loadRulePack, parseYaml, RulePackError, validateRulePack, gmTitleOf, checkDerivedFormulas } from '../src/rules.ts';
 import { generateCharacter } from '../src/chargen.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -164,4 +164,30 @@ test('内置 dnd5e 规则包：d20 体系加载/车卡/检定 DSL', () => {
   for (const v of Object.values(char.attributes)) assert.ok(v >= 3 && v <= 18, `属性值 ${v} 超范围`);
   assert.ok(char.occupation.length > 0);
   assert.ok(char.derived['生命值'] > 0);
+});
+
+// Spec 轴：衍生公式字段引用检查（坏包不静默带病运行——保存时告警）
+test('checkDerivedFormulas：合法公式通过；引用未定义字段给出告警', () => {
+  const base = {
+    id: 'x', name: 'n', version: '1', dice_schema: 'd100',
+    character_sheet: { attributes: ['力量', '敏捷'], skills: [{ name: '侦查', base: 20, category: 'c' }] },
+    check_rules: { normal: 'd100 <= SKILL' },
+  };
+  // 合法：引用属性/技能名 + DSL 函数
+  const ok = checkDerivedFormulas({
+    ...base,
+    chargen: { derived_formulas: { 生命值: 'floor((力量-10)/2)+10', 先攻: '敏捷/2', 侦查加成: '侦查*2' } },
+  } as never);
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.unknown, []);
+  // 引用未定义字段（如技能名当属性用——NBA 包"体力: 运动*2+力量"里"力量"是技能）
+  const bad = checkDerivedFormulas({
+    ...base,
+    chargen: { derived_formulas: { 体力: '运动*2+力量', 节奏: '速度+组织/2' } },
+  } as never);
+  assert.equal(bad.ok, false);
+  assert.ok(bad.unknown.includes('运动'));
+  assert.ok(bad.unknown.includes('速度') && bad.unknown.includes('组织'));
+  // 无 chargen/无公式 → 直接通过
+  assert.equal(checkDerivedFormulas(base as never).ok, true);
 });

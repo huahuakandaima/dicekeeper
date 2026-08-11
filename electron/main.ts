@@ -21,7 +21,7 @@ for (const stream of [process.stdout, process.stderr]) {
 
 // —— 引擎层 ——
 import { CampaignStore, toChatMessages, trimHistoryToWindow, type StoredMessage } from '../src/campaign.ts';
-import { loadRulePack, parseYaml, gmTitleOf } from '../src/rules.ts';
+import { loadRulePack, parseYaml, gmTitleOf, checkDerivedFormulas } from '../src/rules.ts';
 import { serializeYaml } from '../src/yaml-write.ts';
 import { loadScenarioPack } from '../src/scenario.ts';
 import { matchLore } from '../src/lore.ts';
@@ -1224,7 +1224,12 @@ ipcMain.handle('editor:save', (_e, req: { type: 'rule' | 'scenario'; id: string;
   if (!req || !req.obj) return { ok: false, error: '缺少编辑对象' };
   const r = savePackObject({ type: req.type, id: req.id, isBuiltin: !!req.isBuiltin, obj: req.obj as never, store: packStore });
   // 规则包内容已变：清运行时缓存，否则 loadRulePackFor 命中旧包（"编辑器改完不生效"）
-  if (r.ok && req.type === 'rule') rulePackCache.clear();
+  if (r.ok && req.type === 'rule') {
+    rulePackCache.clear();
+    // Spec 轴：衍生公式引用未定义字段 → 可见告警（运行时这些值会回退首属性，避免静默带病运行）
+    const w = checkDerivedFormulas(req.obj as RulePack);
+    if (!w.ok) r.warning = `衍生公式引用了未定义的字段：${w.unknown.join('、')}——车卡时这些衍生值会回退为首属性值，请修正公式或补字段`;
+  }
   return r;
 });
 // 试跑：规则包检定模拟（判定本地化同款引擎，改完立即生效）
