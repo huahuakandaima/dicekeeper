@@ -1723,8 +1723,9 @@ function createWindow(): void {
         // 曾因模板缺 chargen 段抛错且前端静默失败保留默认卡；现断言属性名跟模板包（STR/...≠默认中文属性）
         const r34 = await js(`window.dk.editor.create({ type: 'rule', name: 'E2E 规则包' }).then(async (c) => {
           if (!c.ok || !c.meta) return JSON.stringify({ create: false, err: c.error || 'create-failed' });
+          const opened = await window.dk.editor.open('rule', c.meta.id).then(o => o.ok ? 'open-ok' : ('open-fail:' + (o.error || ''))).catch(() => 'open-err');
           const p = await window.dk.characters.preview('e2e-rp', false, c.meta.id);
-          return JSON.stringify({ create: c.ok, attrs: Object.keys(p.attributes).join(',') });
+          return JSON.stringify({ create: c.ok, id: c.meta.id, opened, occ: p.occupation, attrs: Object.keys(p.attributes).join(','), derived: Object.keys(p.derived).join(',') });
         })`);
         const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
         console.log(line);

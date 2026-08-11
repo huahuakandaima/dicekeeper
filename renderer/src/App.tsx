@@ -1101,7 +1101,8 @@ export function App() {
                         <span className="dim"> · {preview.occupation} · {preview.age} 岁</span>
                       </div>
                       <div className="attrs">{Object.entries(preview.attributes).map(([k, v]) => `${k} ${v}`).join('  ')}</div>
-                      <div className="derived">HP {preview.derived.HP} / MP {preview.derived.MP} / SAN {preview.derived.SAN} / 幸运 {preview.derived.幸运}</div>
+                      {/* 衍生值按规则包动态渲染（曾硬编码 HP/MP/SAN/幸运=CoC 名，非 CoC 包显示 undefined/默认名） */}
+                      <div className="derived">{Object.entries(preview.derived).map(([k, v]) => `${k} ${v}`).join('  ')}</div>
                       <div className="dim">擅长：{Object.entries(preview.topSkills).slice(0, 5).map(([k, v]) => `${k} ${v}`).join(' · ')}</div>
                     </div>
                   )}

@@ -22,10 +22,11 @@ contextBridge.exposeInMainWorld('dk', {
     tokens: (id) => ipcRenderer.invoke('campaign:tokens', id),
   },
   characters: {
-    preview: (seed) => ipcRenderer.invoke('characters:preview', seed),
+    // rulePackId 透传（v0.1.24 修复：曾漏转发导致「按规则包生成角色卡」永远用默认 coc7e）
+    preview: (seed, loaded, rulePackId) => ipcRenderer.invoke('characters:preview', seed, loaded, rulePackId),
     reroll: () => ipcRenderer.invoke('characters:reroll'),
-    fields: () => ipcRenderer.invoke('characters:fields'),
-    derive: (spec, seed) => ipcRenderer.invoke('characters:derive', spec, seed),
+    fields: (rulePackId) => ipcRenderer.invoke('characters:fields', rulePackId),
+    derive: (spec, seed, rulePackId) => ipcRenderer.invoke('characters:derive', spec, seed, rulePackId),
     update: (spec, overrides) => ipcRenderer.invoke('characters:update', spec, overrides),
   },
   session: {
