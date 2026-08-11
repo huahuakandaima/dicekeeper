@@ -50,7 +50,7 @@ export function App() {
   const [previewBusy, setPreviewBusy] = useState(false); // 车卡生成中（确认按钮防连点）
   const [loaded, setLoaded] = useState(false);         // C14 灌铅模式（属性骰取优）
   const [pendingDel, setPendingDel] = useState<{ id: string; name: string } | null>(null); // 删除确认
-  const [scenario, setScenario] = useState<{ id: string; name: string; hooks: string[] } | null>(null);
+  const [scenario, setScenario] = useState<{ id: string; name: string; hooks: string[]; place?: string | null; person?: string | null } | null>(null);
   const [scenarioPacks, setScenarioPacks] = useState<PackMeta[]>([]);
   // 技能按钮类型（规则包 character_sheet.skills[].action：check/narrative/none）——右侧技能栏按此渲染
   const [skillActions, setSkillActions] = useState<Record<string, 'check' | 'narrative' | 'none'>>({});
@@ -841,7 +841,11 @@ export function App() {
               value={input}
               onChange={(e) => onInputChange(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && send()}
-              placeholder={roomJoined ? `描述你的行动…（由房主${gmTitle}响应）` : '描述你的行动…（例：去渔市码头 / @埃德加 聊聊 / 查看货舱）'}
+              placeholder={roomJoined
+                ? `描述你的行动…（由房主${gmTitle}响应）`
+                : scenario?.place
+                  ? `描述你的行动…（例：去${scenario.place} / @${scenario.person ?? '某人'} 聊聊 / 查看周围）`
+                  : '描述你的行动…（例：前往某地 / 找人聊聊 / 查看周围）'}
               disabled={busy}
             />
             {atCandidates.length > 0 && (

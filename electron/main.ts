@@ -1137,15 +1137,16 @@ ${a.detail}
 
 // —— IPC：剧本包 ——
 // 按当前战役的剧本包返回（修复：曾硬编码内置雾港——选自定义剧本包建团后开场白仍是默认剧情第一句）
+// place/person：首地点/首 NPC（输入框占位符示例用——曾写死雾港的"渔市码头/埃德加"，换剧本包后不通用）
 ipcMain.handle('scenario:info', () => {
   if (activeCampaignId) {
     const c = store.loadCampaign(activeCampaignId);
     if (c.scenarioPackId) {
       const sc = loadScenarioById(c.scenarioPackId);
-      if (sc) return { id: sc.id, name: sc.name, hooks: sc.hooks };
+      if (sc) return { id: sc.id, name: sc.name, hooks: sc.hooks, place: sc.locations?.[0]?.name ?? null, person: sc.npc_seeds?.[0]?.name ?? null };
     }
   }
-  return { id: scenario.id, name: scenario.name, hooks: scenario.hooks };
+  return { id: scenario.id, name: scenario.name, hooks: scenario.hooks, place: scenario.locations?.[0]?.name ?? null, person: scenario.npc_seeds?.[0]?.name ?? null };
 });
 ipcMain.handle('scenario:list', () => listScenarioPacks());
 
@@ -1771,7 +1772,7 @@ function createWindow(): void {
           if (!imp.ok) return JSON.stringify({ imported: false });
           const c = await window.dk.campaign.create({ name: 'E2E 剧本包战役', seed: 'scen-e2e', scenarioPackId: 'fog_harbor_e2e' });
           const info = await window.dk.scenario.info();
-          return JSON.stringify({ imported: true, id: info.id, name: info.name, hook: String(info.hooks[0]).slice(0, 10) });
+          return JSON.stringify({ imported: true, id: info.id, name: info.name, hook: String(info.hooks[0]).slice(0, 10), place: info.place, person: info.person });
         })`);
         // 剧本包-规则包绑定校验（用户要求：剧情包只能根据规则包选择）：
         // 雾港(coc7e) + 其他规则包 → 建团拒绝；雾港 + coc7e → 放行
