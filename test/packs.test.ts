@@ -376,3 +376,20 @@ test('parseAiOutput：json 代码块与文字混排与尾部解释均能解析',
   const obj3 = parseAiOutput(jsonBlock);
   assert.ok(obj3 && obj3.id === 'scen-blk');
 });
+
+// AI 输出条目空串/非数组防御：traits 空串补占位（修复"npc_seeds[0] 缺少 traits"）；npc_seeds 是对象不崩
+test('normalizeGeneratedPack：npc_seeds 条目 traits 空串被补占位 + 非数组不崩', () => {
+  // traits 空串（AI 常见输出 traits: ""）→ 补占位后通过校验
+  const ai = { name: '测试', world: { summary: 'S' }, npc_seeds: [{ name: '警长', traits: '' }], locations: [{ name: '码头' }], plot_threads: [{ name: '线索' }], hooks: ['开场'], lore_entries: [{ key_terms: ['雾'], content: 'C' }] };
+  const norm = normalizeGeneratedPack('scenario', ai, '测试剧本');
+  const npc = (norm.npc_seeds as { traits: string }[])[0];
+  assert.ok(npc.traits.trim().length > 0, 'traits 空串被占位补全');
+  const body = serializePackObject('scenario', norm as never);
+  const res = validatePackContent(dkContent('scenario', body), ['coc7e']);
+  assert.equal(res.ok, true, res.error ?? '');
+  // npc_seeds 是非数组（AI 输出对象）→ 不崩，保留模板数组
+  const ai2 = { name: '测试2', world: { summary: 'S' }, npc_seeds: { name: 'X' }, locations: [{ name: '码头' }], plot_threads: [{ name: '线索' }], hooks: ['开场'], lore_entries: [{ key_terms: ['雾'], content: 'C' }] };
+  const norm2 = normalizeGeneratedPack('scenario', ai2, '测试');
+  const res2 = validatePackContent(dkContent('scenario', serializePackObject('scenario', norm2 as never)), ['coc7e']);
+  assert.equal(res2.ok, true, res2.error ?? '');
+});

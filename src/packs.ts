@@ -331,6 +331,8 @@ export function normalizeGeneratedPack(type: PackType, raw: Record<string, unkno
   }
   for (const [k, v] of Object.entries(raw)) {
     if (v === undefined || v === null) continue;
+    // 数组字段：AI 输出非数组（对象/字符串）→ 忽略，保留模板数组（校验要求数组）
+    if (['npc_seeds', 'locations', 'plot_threads', 'hooks', 'lore_entries', 'encounters'].includes(k) && !Array.isArray(v)) continue;
     // check_rules：AI 给的档位保留，模板缺的档位补全（合并而非覆盖）
     if (k === 'check_rules' && typeof v === 'object') {
       merged[k] = { ...((merged.check_rules ?? {}) as object), ...(v as object) };
@@ -377,18 +379,31 @@ export function normalizeGeneratedPack(type: PackType, raw: Record<string, unkno
     const summary = typeof aiWorld.summary === 'string' && aiWorld.summary.trim() ? aiWorld.summary : tplWorld.summary;
     merged.world = { ...tplWorld, ...aiWorld, summary };
   }
-  // 条目级兜底：AI 生成的条目缺必填字段 → 补占位（AI 有则保留）
+  // 条目级兜底：AI 生成的条目缺必填字段/空串 → 补占位（AI 有有效值则保留）
+  // 注意：占位必须放 ...n 之后（AI 空串会覆盖占位导致校验失败）；数组用 Array.isArray 保护（AI 可能输出对象）
   if (type === 'scenario') {
-    merged.npc_seeds = ((merged.npc_seeds ?? []) as Record<string, unknown>[]).map((n) => ({ traits: '（AI 未生成性格，请补充）', ...n, name: typeof n.name === 'string' && n.name.trim() ? n.name : '未命名 NPC' }));
-    merged.locations = ((merged.locations ?? []) as Record<string, unknown>[]).map((l, i) => ({ ...l, name: typeof l.name === 'string' && l.name.trim() ? l.name : `地点${i + 1}` }));
-    merged.plot_threads = ((merged.plot_threads ?? []) as Record<string, unknown>[]).map((t, i) => ({ ...t, id: typeof t.id === 'string' && t.id.trim() ? t.id : `t${i + 1}`, name: typeof t.name === 'string' && t.name.trim() ? t.name : '未命名线索' }));
-    merged.lore_entries = ((merged.lore_entries ?? []) as Record<string, unknown>[]).map((e, i) => ({
-      ...e,
-      id: typeof e.id === 'string' && e.id.trim() ? e.id : `l${i + 1}`,
-      key_terms: Array.isArray(e.key_terms) && (e.key_terms as unknown[]).length > 0 ? (e.key_terms as unknown[]) : ['未分类'],
-      activation: typeof e.activation === 'string' && ['blue', 'green', 'yellow'].includes(e.activation) ? e.activation : 'blue',
-      content: typeof e.content === 'string' && e.content.trim() ? e.content : '（AI 未生成内容，请补充）',
-    }));
+    if (Array.isArray(merged.npc_seeds)) {
+      merged.npc_seeds = (merged.npc_seeds as Record<string, unknown>[]).map((n) => ({
+        ...n,
+        name: typeof n.name === 'string' && n.name.trim() ? n.name : '未命名 NPC',
+        traits: typeof n.traits === 'string' && n.traits.trim() ? n.traits : '（AI 未生成性格，请补充）',
+      }));
+    }
+    if (Array.isArray(merged.locations)) {
+      merged.locations = (merged.locations as Record<string, unknown>[]).map((l, i) => ({ ...l, name: typeof l.name === 'string' && l.name.trim() ? l.name : `地点${i + 1}` }));
+    }
+    if (Array.isArray(merged.plot_threads)) {
+      merged.plot_threads = (merged.plot_threads as Record<string, unknown>[]).map((t, i) => ({ ...t, id: typeof t.id === 'string' && t.id.trim() ? t.id : `t${i + 1}`, name: typeof t.name === 'string' && t.name.trim() ? t.name : '未命名线索' }));
+    }
+    if (Array.isArray(merged.lore_entries)) {
+      merged.lore_entries = (merged.lore_entries as Record<string, unknown>[]).map((e, i) => ({
+        ...e,
+        id: typeof e.id === 'string' && e.id.trim() ? e.id : `l${i + 1}`,
+        key_terms: Array.isArray(e.key_terms) && (e.key_terms as unknown[]).length > 0 ? (e.key_terms as unknown[]) : ['未分类'],
+        activation: typeof e.activation === 'string' && ['blue', 'green', 'yellow'].includes(e.activation) ? e.activation : 'blue',
+        content: typeof e.content === 'string' && e.content.trim() ? e.content : '（AI 未生成内容，请补充）',
+      }));
+    }
   }
   return merged;
 }
