@@ -263,6 +263,27 @@ export function loadImportedRulePack(store: PackStore, id: string): RulePack | n
   }
 }
 
+// 老包兼容（2026-08-11 修复）：修复前创建的规则包可能缺 chargen（模板/AI 生成时代，车卡/衍生/手填
+// 全链依赖 attribute_methods + occupations 非空）——加载时兜底补全，老包直接可用，无需重新编辑
+export function ensureChargen(pack: RulePack): RulePack {
+  const cg = pack.chargen;
+  const ok = cg && Array.isArray(cg.attribute_methods) && cg.attribute_methods.length > 0
+    && Array.isArray(cg.occupations) && cg.occupations.length > 0;
+  if (ok) return pack;
+  const tpl = buildNewPackTemplate('rule', pack.name, pack.id) as RulePack;
+  const tplCg = tpl.chargen ?? { attribute_methods: [], derived_formulas: {}, occupations: [] };
+  return {
+    ...pack,
+    // fields 用包自己的属性名（generateCharacter 按 character_sheet.attributes 驱动，公式缺省 3d6*5）；
+    // 职业技能用包自己的技能名（职业点均分可落地）
+    chargen: {
+      ...tplCg,
+      attribute_methods: [{ name: '属性生成', formula: '3d6*5', fields: pack.character_sheet.attributes }],
+      occupations: tplCg.occupations.map((o) => ({ ...o, skills: pack.character_sheet.skills.map((s) => s.name) })),
+    },
+  };
+}
+
 // 新包 id 生成（editor:create 与 AI 兜底共用，防两处重复硬编码）
 export function genPackId(type: PackType, aiGenerated = false): string {
   return `${type === 'rule' ? 'rule' : 'scen'}${aiGenerated ? '-gen' : ''}-${Date.now().toString(36)}`;
@@ -305,6 +326,16 @@ export function buildNewPackTemplate(type: PackType, name: string, id: string): 
         attributes: ['STR', 'CON', 'DEX', 'APP', 'INT', 'POW', 'EDU', 'SIZ'],
         derived: ['HP', 'MP', 'SAN'],
         skills: [{ name: '示例技能', base: 50, category: '调查' }],
+      },
+      // chargen 段必须给（车卡/衍生/手填全链依赖 attribute_methods + occupations 非空）：
+      // 模板新建的规则包直接可「按规则包生成角色卡」/手动编辑/建团，不再报"缺少 chargen 段"
+      chargen: {
+        attribute_methods: [
+          { name: '常规属性', formula: '3d6*5', fields: ['STR', 'CON', 'DEX', 'APP', 'POW'] },
+          { name: '非常规属性', formula: '(2d6+6)*5', fields: ['SIZ', 'INT', 'EDU'] },
+        ],
+        derived_formulas: { HP: '(SIZ+CON)/10', MP: 'POW/5', SAN: 'POW' },
+        occupations: [{ name: '示例职业', skills: ['示例技能'], points: 'EDU*2+INT*2' }],
       },
       check_rules: {
         extreme: 'd100 <= fifth(SKILL)',
@@ -386,6 +417,24 @@ export function normalizeGeneratedPack(type: PackType, raw: Record<string, unkno
   }
   // 条目级兜底：AI 生成的条目缺必填字段/空串 → 补占位（AI 有有效值则保留）
   // 注意：占位必须放 ...n 之后（AI 空串会覆盖占位导致校验失败）；数组用 Array.isArray 保护（AI 可能输出对象）
+  if (type === 'rule') {
+    // 规则包 chargen 兜底（车卡/衍生/手填全链依赖 attribute_methods + occupations 非空，缺了"按规则包生成角色卡"静默失败）：
+    // AI 没给/残缺（大概率）→ 模板补全；AI 给全 → 保留 AI 的
+    const tplCg = (tpl.chargen ?? {}) as Record<string, unknown>;
+    const aiCg = raw.chargen && typeof raw.chargen === 'object' && !Array.isArray(raw.chargen)
+      ? (raw.chargen as Record<string, unknown>)
+      : undefined;
+    merged.chargen = {
+      ...tplCg,
+      ...(aiCg ?? {}),
+      attribute_methods: Array.isArray(aiCg?.attribute_methods) && (aiCg.attribute_methods as unknown[]).length > 0
+        ? aiCg.attribute_methods
+        : tplCg.attribute_methods,
+      occupations: Array.isArray(aiCg?.occupations) && (aiCg.occupations as unknown[]).length > 0
+        ? aiCg.occupations
+        : tplCg.occupations,
+    };
+  }
   if (type === 'scenario') {
     if (Array.isArray(merged.npc_seeds)) {
       merged.npc_seeds = (merged.npc_seeds as Record<string, unknown>[]).map((n) => ({

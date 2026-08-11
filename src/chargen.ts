@@ -52,8 +52,10 @@ export function computeDerived(pack: RulePack, attributes: Record<string, number
     for (const [name, formula] of Object.entries(cg.derived_formulas)) {
       try {
         derived[name] = Math.floor(evaluate(formula, { fields: baseFields, rng: r }).value as number);
-      } catch (e) {
-        throw new ChargenError(`衍生公式 ${name}="${formula}" 求值失败: ${(e as Error).message}`);
+      } catch {
+        // 公式引用字段与属性名不匹配（英文公式 + 中文属性名，模板兜底/AI 输出常见）→ 回退首属性值，不炸车卡
+        const first = pack.character_sheet.attributes[0];
+        derived[name] = Math.max(1, Math.min(99, Math.round(Number(baseFields[first]) || 50)));
       }
     }
   }
@@ -110,18 +112,22 @@ export function generateCharacter(pack: RulePack, opts: ChargenOptions = {}): Ch
   const rng = opts.rng ?? makeRng(opts.seed ?? 'chargen');
   const seed = opts.seed ?? 'chargen';
 
-  // ① 属性生成：按 attribute_methods 的公式逐个掷骰（复用 dice.ts）
+  // ① 属性生成：以 character_sheet.attributes 为驱动（用户定义的属性即车卡输出），
+  // 公式按字段名从 attribute_methods 匹配、缺省 3d6*5——修"改了属性名车卡还是旧字段"（模板/AI 包字段脱节）
   // 灌铅模式（§11.10）：每个属性重复投一次，取总值更高的一次（不改变分布形状，整体右移）
+  const methodByField = new Map<string, string>();
+  for (const m of cg.attribute_methods ?? []) {
+    for (const f of m.fields) methodByField.set(f, m.formula);
+  }
   const attributes: Record<string, number> = {};
-  for (const method of cg.attribute_methods ?? []) {
-    for (const field of method.fields) {
-      let r = roll(method.formula, rng);
-      if (opts.loaded) {
-        const r2 = roll(method.formula, rng);
-        if (r2.total > r.total) r = r2;
-      }
-      attributes[field] = r.total;
+  for (const field of pack.character_sheet.attributes) {
+    const formula = methodByField.get(field) ?? '3d6*5';
+    let r = roll(formula, rng);
+    if (opts.loaded) {
+      const r2 = roll(formula, rng);
+      if (r2.total > r.total) r = r2;
     }
+    attributes[field] = r.total;
   }
 
   // ② 年龄（v1：20-39 档无修正；年龄修正结构化 v2）
@@ -138,8 +144,14 @@ export function generateCharacter(pack: RulePack, opts: ChargenOptions = {}): Ch
     : occupations[rollInt(rng, 0, occupations.length - 1)].name;
   const occ = occupations.find((o) => o.name === occupation)!;
 
-  // 职业点：occupation.points 公式（如 EDU*2+INT*2），兴趣点 INT*2
-  const occPoints = Math.floor(evaluate(occ.points, { fields: { ...attributes }, rng }).value as number);
+  // 职业点：occupation.points 公式（如 EDU*2+INT*2）。公式字段引用与属性名可能不匹配
+  // （英文公式 + 中文属性名，AI/用户改属性后常见）——求值失败回退固定点数，不炸车卡
+  let occPoints: number;
+  try {
+    occPoints = Math.floor(evaluate(occ.points, { fields: { ...attributes }, rng }).value as number);
+  } catch {
+    occPoints = Math.max(30, pack.character_sheet.attributes.length * 20);
+  }
   const interestPoints = (attributes.INT ?? 0) * 2;
 
   // 技能初始化：base 值

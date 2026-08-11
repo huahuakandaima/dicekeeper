@@ -457,6 +457,8 @@ export function App() {
     try {
       const p = await window.dk.characters.preview(`ui-${Date.now()}`, loaded, selRulePackId || undefined);
       setPreview(p);
+    } catch (e) {
+      setNotice(`随机车卡失败：${(e as Error).message}`);
     } finally {
       setPreviewBusy(false);
     }
@@ -468,6 +470,9 @@ export function App() {
       const p = await window.dk.characters.preview(`ui-${Date.now()}`, loaded, selRulePackId || undefined);
       setPreview(p);
       if (editMode) await openCharEdit('new', p);
+    } catch (e) {
+      // 静默失败曾让用户误判"还是默认规则"——必须报错可见（如规则包缺 chargen 段）
+      setNotice(`按规则包生成失败：${(e as Error).message}`);
     } finally {
       setPreviewBusy(false);
     }
@@ -479,9 +484,14 @@ export function App() {
     if (!name) { setNotice('请输入战役名称'); return; }
     setShowNew(false);
     setNewName('');
-    const c = await window.dk.campaign.create({ name, seed: preview?.seed ?? `ui-${Date.now()}`, charName, scenarioPackId: selScenarioId || undefined, loaded, personaId: selPersonaId || undefined, rulePackId: selRulePackId || undefined });
-    setCampaigns(await window.dk.campaign.list());
-    await openCampaign(c.id);
+    try {
+      const c = await window.dk.campaign.create({ name, seed: preview?.seed ?? `ui-${Date.now()}`, charName, scenarioPackId: selScenarioId || undefined, loaded, personaId: selPersonaId || undefined, rulePackId: selRulePackId || undefined });
+      setCampaigns(await window.dk.campaign.list());
+      await openCampaign(c.id);
+    } catch (e) {
+      setNotice(`建团失败：${(e as Error).message}`);
+      setShowNew(true); // 失败弹窗别关，用户可改设置重试
+    }
   }
 
   // 建团后（或已有战役）侧边栏"重骰角色"：替换 PC 卡并刷新

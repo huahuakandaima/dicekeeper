@@ -9,7 +9,8 @@ import { readFileSync } from 'node:fs';
 import { serializeYaml } from '../src/yaml-write.ts';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => readFileSync(p, 'utf-8');
-import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, parseAiOutput, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
+import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, parseAiOutput, testPackCheck, testPackDistribution, testPackLore, ensureChargen } from '../src/packs.ts';
+import { generateCharacter } from '../src/chargen.ts';
 import { loadScenarioPack } from '../src/scenario.ts';
 import { loadRulePack, parseYaml } from '../src/rules.ts';
 
@@ -230,6 +231,83 @@ test('buildNewPackTemplate：id 唯一性语义（时间戳前缀）', () => {
   const b = buildNewPackTemplate('scenario', '乙', 'scen-def');
   assert.notEqual((a as Record<string, unknown>).id, (b as Record<string, unknown>).id);
   assert.equal((a as Record<string, unknown>).name, '甲');
+});
+
+// 换规则包 bug 修复（2026-08-11 用户实测"按规则包生成角色卡还是默认规则"）：
+// 根因：模板新建/AI 生成的规则包缺 chargen 段 → generateCharacter/computeDerived/buildCharacter 抛
+// "缺少 chargen 段" → 前端无 catch 静默保留旧默认卡。三层修复：模板补 chargen + normalize 兜底 + 前端报错可见
+test('buildNewPackTemplate：规则包模板含 chargen（车卡/衍生全链可用）', () => {
+  const tpl = buildNewPackTemplate('rule', '我的规则', 'rule-cg1') as Record<string, unknown>;
+  const cg = tpl.chargen as Record<string, unknown>;
+  assert.ok(Array.isArray(cg.attribute_methods) && (cg.attribute_methods as unknown[]).length > 0, 'attribute_methods 非空');
+  assert.ok(Array.isArray(cg.occupations) && (cg.occupations as unknown[]).length > 0, 'occupations 非空');
+  // 模板包直接车卡（「按规则包生成角色卡」同路径），不再抛"缺少 chargen 段"
+  const char = generateCharacter(tpl as never, { seed: 'cg-seed' });
+  assert.ok(Object.keys(char.attributes).length >= 8);
+  assert.ok(char.occupation.length > 0);
+  assert.ok(char.derived.HP > 0 && char.derived.SAN > 0);
+});
+
+test('normalizeGeneratedPack：AI 规则包缺 chargen → 模板兜底（不再静默车卡失败）', () => {
+  const ai = { id: 'rule-ai1', name: '末世', character_sheet: { attributes: ['力量', '敏捷'], skills: [{ name: '枪械', base: 40, category: '战斗' }] }, check_rules: { normal: 'd100 <= SKILL' } };
+  const norm = normalizeGeneratedPack('rule', ai, '末世规则') as Record<string, unknown>;
+  const cg = norm.chargen as Record<string, unknown>;
+  assert.ok(Array.isArray(cg.attribute_methods) && (cg.attribute_methods as unknown[]).length > 0);
+  assert.ok(Array.isArray(cg.occupations) && (cg.occupations as unknown[]).length > 0);
+  // 兜底后能过完整校验 + 直接车卡
+  const body = serializePackObject('rule', norm as never);
+  const res = validatePackContent(dkContent('rule', body), []);
+  assert.equal(res.ok, true, res.error ?? '');
+  const char = generateCharacter(norm as never, { seed: 'ai-seed' });
+  assert.ok(Object.keys(char.attributes).length > 0);
+});
+
+test('normalizeGeneratedPack：AI 规则包给了完整 chargen → 保留 AI 的', () => {
+  const ai = {
+    id: 'rule-ai2', name: '异能', dice_schema: 'd100',
+    character_sheet: { attributes: ['异能', '体能'], skills: [{ name: '念力', base: 30, category: '异能' }] },
+    check_rules: { normal: 'd100 <= SKILL' },
+    chargen: {
+      attribute_methods: [{ name: '异能骰', formula: '2d6*10', fields: ['异能', '体能'] }],
+      derived_formulas: { 能量: '异能*2' },
+      occupations: [{ name: '觉醒者', skills: ['念力'], points: '异能*3' }],
+    },
+  };
+  const norm = normalizeGeneratedPack('rule', ai, '异能规则') as Record<string, unknown>;
+  const cg = norm.chargen as Record<string, unknown>;
+  assert.equal((cg.attribute_methods as { formula: string }[])[0].formula, '2d6*10');
+  assert.equal((cg.occupations as { name: string }[])[0].name, '觉醒者');
+  const char = generateCharacter(norm as never, { seed: 'ai2-seed' });
+  assert.ok(char.attributes['异能'] > 0);
+});
+
+test('normalizeGeneratedPack：中文属性 + 模板兜底 chargen → 车卡出中文属性（不再 STR 英文）', () => {
+  const ai = {
+    id: 'rule-wuxia', name: '武侠', dice_schema: 'd100',
+    character_sheet: { attributes: ['武力', '身法', '内功', '慧根'], derived: ['气血', '真气'], skills: [{ name: '拳法', base: 60, category: '武学' }] },
+    check_rules: { normal: 'd100 <= SKILL' },
+  };
+  const norm = normalizeGeneratedPack('rule', ai, '武侠规则') as Record<string, unknown>;
+  const char = generateCharacter(norm as never, { seed: 'wuxia-seed' });
+  assert.deepEqual(Object.keys(char.attributes).sort(), ['内功', '武力', '身法', '慧根'].sort());
+  // 兜底衍生公式引用模板英文字段（SIZ/CON）→ 求值兜底回退首属性，不炸
+  for (const v of Object.values(char.derived)) assert.ok(Number.isFinite(v as number));
+});
+
+test('ensureChargen：老规则包缺 chargen → 加载兜底补全，直接可车卡（中文属性不脱节）', () => {
+  // 模拟修复前创建的包（validateRulePack 放行、无 chargen）
+  const old = {
+    id: 'rule-old', name: '老包', version: '1.0', dice_schema: 'd100',
+    character_sheet: { attributes: ['力量', '敏捷', '感知'], derived: ['血量'], skills: [{ name: '格斗', base: 50, category: '战斗' }] },
+    check_rules: { normal: 'd100 <= SKILL' },
+  } as never;
+  const patched = ensureChargen(old) as Record<string, unknown>;
+  const cg = patched.chargen as Record<string, unknown>;
+  assert.ok(Array.isArray(cg.attribute_methods) && (cg.attribute_methods as { fields: string[] }[])[0].fields.join(',') === '力量,敏捷,感知');
+  assert.ok(Array.isArray(cg.occupations) && (cg.occupations as { skills: string[] }[])[0].skills.join(',') === '格斗');
+  // 兜底后直接车卡（属性名 = 包自己的属性）
+  const char = generateCharacter(patched as never, { seed: 'old-seed' });
+  assert.deepEqual(Object.keys(char.attributes).sort(), ['力量', '敏捷', '感知'].sort());
 });
 
 // AI 生成整包兜底：AI 输出缺 id/name/空数组 → 规范化后必须能过完整校验（修复"剧本包缺少 id"）
