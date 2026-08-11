@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadRulePack, parseYaml, RulePackError, validateRulePack, gmTitleOf } from '../src/rules.ts';
+import { generateCharacter } from '../src/chargen.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -144,4 +145,23 @@ test('校验：gm_title 可选；合法字符串接受、非法类型拒绝；�
   assert.equal(gmTitleOf({ gm_title: '地下城主' }), '地下城主');
   assert.equal(gmTitleOf({}), '主持人');
   assert.equal(gmTitleOf({ gm_title: '   ' }), '主持人');
+});
+
+// 内置第二规则包（规格 §3.4：dnd5e（d20 系）+ coc7e（d100 系）两包）
+test('内置 dnd5e 规则包：d20 体系加载/车卡/检定 DSL', () => {
+  const p = loadRulePack(join(RULES_DIR, 'dnd5e.yaml'));
+  assert.equal(p.dice_schema, 'd20');
+  assert.equal(p.gm_title, '地下城主');
+  assert.equal(p.character_sheet.attributes.length, 6);
+  assert.ok(p.character_sheet.skills.length >= 15);
+  // 检定 DSL 四档可解析（DC 10/15/20 + 天然 1 大失败）
+  const cr = p.check_rules;
+  for (const expr of [cr.normal, cr.hard, cr.extreme, cr.crit_fail]) {
+    assert.doesNotThrow(() => validateRulePack({ ...p, check_rules: { normal: expr } } as unknown as Record<string, unknown>));
+  }
+  // 车卡：4d6kh3 属性 ∈[3,18]，检定走 d20
+  const char = generateCharacter(p, { seed: 'dnd-seed' });
+  for (const v of Object.values(char.attributes)) assert.ok(v >= 3 && v <= 18, `属性值 ${v} 超范围`);
+  assert.ok(char.occupation.length > 0);
+  assert.ok(char.derived['生命值'] > 0);
 });

@@ -1,0 +1,62 @@
+# D&D 5e 规则包（DiceKeeper 内置样例 v1，规格 §3.4：内置 dnd5e（d20 系）+ coc7e（d100 系）两包）
+# 建模说明（引擎通用框架下的 D&D 近似）：
+# - 属性：标准车卡 4d6 取 3 高（kh3）；检定 = d20 + 技能值 >= DC（check_rules 档位 = DC 10/15/20；大失败 = 天然 1）
+# - 技能值即检定加值（简化：熟练+属性调整合计后直接作为技能值，可手动编辑微调）
+# - 优势/劣势 = 2d20 取高/取低（DSL：2d20kh1 / 2d20kl1）
+
+id: dnd5e
+name: 龙与地下城 5e
+version: 1.0
+dice_schema: d20
+gm_title: 地下城主
+
+character_sheet:
+  attributes: [力量, 敏捷, 体质, 智力, 感知, 魅力]
+  derived: [生命值, 熟练加值, 护甲等级, 先攻]
+  skills:
+    - {name: 运动, base: 0, category: 力量}
+    - {name: 体操, base: 0, category: 敏捷}
+    - {name: 巧手, base: 0, category: 敏捷}
+    - {name: 隐匿, base: 0, category: 敏捷}
+    - {name: 奥秘, base: 0, category: 智力}
+    - {name: 历史, base: 0, category: 智力}
+    - {name: 调查, base: 0, category: 智力}
+    - {name: 自然, base: 0, category: 智力}
+    - {name: 宗教, base: 0, category: 智力}
+    - {name: 驯兽, base: 0, category: 感知}
+    - {name: 洞悉, base: 0, category: 感知}
+    - {name: 医疗, base: 0, category: 感知}
+    - {name: 察觉, base: 0, category: 感知}
+    - {name: 生存, base: 0, category: 感知}
+    - {name: 欺瞒, base: 0, category: 魅力}
+    - {name: 威吓, base: 0, category: 魅力}
+    - {name: 表演, base: 0, category: 魅力}
+    - {name: 说服, base: 0, category: 魅力}
+
+# 检定档位：DC 10（普通）/ 15（困难）/ 20（极难）；天然 1 大失败
+check_rules:
+  normal: "d20 + SKILL >= 10"
+  hard: "d20 + SKILL >= 15"
+  extreme: "d20 + SKILL >= 20"
+  crit_fail: "d20 == 1"
+
+chargen:
+  attribute_methods:
+    - {name: 标准车卡（4d6 取 3 高）, formula: "4d6kh3", fields: [力量, 敏捷, 体质, 智力, 感知, 魅力]}
+  derived_formulas:
+    生命值: "8 + floor((体质-10)/2)"
+    熟练加值: "2"
+    护甲等级: "10 + floor((敏捷-10)/2)"
+    先攻: "floor((敏捷-10)/2)"
+  occupations:
+    - {name: 战士, skills: [运动, 体操, 察觉, 生存, 威吓], points: "30"}
+    - {name: 法师, skills: [奥秘, 历史, 调查, 宗教, 说服], points: "30"}
+    - {name: 游侠, skills: [运动, 隐匿, 察觉, 生存, 自然], points: "30"}
+    - {name: 游荡者, skills: [体操, 巧手, 隐匿, 欺瞒, 洞察], points: "30"}
+    - {name: 吟游诗人, skills: [表演, 说服, 欺瞒, 洞悉, 历史], points: "30"}
+    - {name: 圣武士, skills: [运动, 威吓, 医疗, 宗教, 说服], points: "30"}
+
+rules_reference: |
+  龙与地下城 5e 核心：属性由 4d6 取 3 高生成（3-18）。检定掷 d20，加上技能值（检定加值）与 DC 对比：
+  DC 10 普通成功、DC 15 困难、DC 20 极难；天然 1 为大失败。技能值即检定加值（熟练+属性调整合并，可手动调整）。
+  优势掷 2d20 取高，劣势掷 2d20 取低。地下城主负责叙事与世界，成败由本地引擎判定。

@@ -59,6 +59,10 @@ const DB_PATH = process.env.DK_E2E
 const RULES_PATH = app.isPackaged
   ? join(process.resourcesPath, 'rules', 'coc7e.yaml')
   : join(__dirname, '..', '..', 'rules', 'coc7e.yaml');
+// 内置第二规则包（规格 §3.4：dnd5e + coc7e 两包）；同目录打包（extraResources 复制整个 rules/）
+const DND5E_PATH = app.isPackaged
+  ? join(process.resourcesPath, 'rules', 'dnd5e.yaml')
+  : join(__dirname, '..', '..', 'rules', 'dnd5e.yaml');
 const SCENARIO_PATH = app.isPackaged
   ? join(process.resourcesPath, 'scenarios', 'fogharbor.yaml')
   : join(__dirname, '..', '..', 'scenarios', 'fogharbor.yaml');
@@ -69,15 +73,17 @@ const PACKS_DIR = process.env.DK_E2E
 
 const store = new CampaignStore(DB_PATH);
 const pack = loadRulePack(RULES_PATH);
+const packDnd5e = loadRulePack(DND5E_PATH); // 内置 dnd5e（d20 系，规格 §3.4）
 const scenario = loadScenarioPack(SCENARIO_PATH);
 const packStore = new PackStore(PACKS_DIR);
 
-// 规则包注册表：按战役 rulePackId 加载（内置 coc7e 或 userData/packs/rule 导入包；找不到回退默认）
+// 规则包注册表：按战役 rulePackId 加载（内置 coc7e/dnd5e 或 userData/packs/rule 导入包；找不到回退默认）
 // —— "不能换规则包"修复核心：运行时判定/车卡/prompt 全部改走此函数，不再硬编码 coc7e
 const rulePackCache = new Map<string, RulePack>();
 function loadRulePackFor(rulePackId: string | null | undefined): RulePack {
   const id = rulePackId || pack.id;
   if (id === pack.id) return pack;
+  if (id === packDnd5e.id) return packDnd5e; // 内置 dnd5e
   const hit = rulePackCache.get(id);
   if (hit) return hit;
   const imported = loadImportedRulePack(packStore, id);
@@ -104,6 +110,7 @@ function listScenarioPacks(): PackMeta[] {
 function listRulePacks(): PackMeta[] {
   return [
     { id: pack.id, name: pack.name, version: pack.version, type: 'rule', isBuiltin: true },
+    { id: packDnd5e.id, name: packDnd5e.name, version: packDnd5e.version, type: 'rule', isBuiltin: true },
     ...packStore.listImported().filter((m) => m.type === 'rule'),
   ];
 }
@@ -142,6 +149,7 @@ function importPackContent(
 function packBody(type: 'rule' | 'scenario', id: string): string | null {
   if (type === 'scenario' && id === scenario.id) return readFileSync(SCENARIO_PATH, 'utf-8');
   if (type === 'rule' && id === pack.id) return readFileSync(RULES_PATH, 'utf-8');
+  if (type === 'rule' && id === packDnd5e.id) return readFileSync(DND5E_PATH, 'utf-8');
   return packStore.load(type, id);
 }
 
@@ -656,7 +664,7 @@ ipcMain.handle('campaign:create', (_e, opts: { name: string; seed?: string; char
   // 规则包可选（"不能换规则包"修复）：rulePackId 指定 → 用该规则包车卡与判定；否则剧本包 requires → 否则默认 coc7e
   let activePack = pack;
   if (opts.rulePackId) {
-    const exists = opts.rulePackId === pack.id || !!loadImportedRulePack(packStore, opts.rulePackId);
+    const exists = opts.rulePackId === pack.id || opts.rulePackId === packDnd5e.id || !!loadImportedRulePack(packStore, opts.rulePackId);
     if (!exists) throw new Error(`规则包不存在: ${opts.rulePackId}`);
     activePack = loadRulePackFor(opts.rulePackId);
   }
@@ -1675,9 +1683,15 @@ function createWindow(): void {
         })`);
         // §11.10 单项重骰：rerollField 返回 {field, value} 且值在属性公式范围内（STR 常规 3d6*5 ∈[15,90]）
         const r40 = await js(`window.dk.characters.rerollField('STR').then((r) => JSON.stringify({ field: r.field, ok: r.value >= 15 && r.value <= 90, v: r.value }))`);
+        // 内置 dnd5e（规格 §3.4 双包）：fields 返回 gmTitle=地下城主/6 属性；按 dnd5e 车卡属性 ∈[3,18]
+        const r41 = await js(`window.dk.characters.fields('dnd5e').then(async (f) => {
+          const p = await window.dk.characters.preview('dnd-e2e', false, 'dnd5e');
+          const vals = Object.values(p.attributes);
+          return JSON.stringify({ gm: f.gmTitle, attrs: f.attributes.length, min: Math.min(...vals), max: Math.max(...vals), occ: p.occupation });
+        })`);
         // 窗口标题带版本号（用户要求）：preventDefault 后 HTML title 不覆盖，标题 = DiceKeeper v<版本>
         const r38 = win.getTitle();
-        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 技能按钮类型=' + r37 + ' GM称谓=' + r39 + ' 单项重骰=' + r40 + ' 窗口标题=' + r38 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
+        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 技能按钮类型=' + r37 + ' GM称谓=' + r39 + ' 单项重骰=' + r40 + ' 内置dnd5e=' + r41 + ' 窗口标题=' + r38 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
         console.log(line);
         try { writeFileSync(join(app.getPath('temp'), 'dk-e2e-result.txt'), line, 'utf-8'); } catch { /* 非关键 */ }
       } catch (e) {
