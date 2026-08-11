@@ -1707,7 +1707,7 @@ function createWindow(): void {
           await window.dk.checkWithChat('侦查');       // App 就绪后触发：onCheck 监听器必收到
           await new Promise(r => setTimeout(r, 400));  // 等渲染 flush
           const txt = document.body.innerText;
-          return JSON.stringify({ checkBubble: txt.includes('【检定】') });
+          return JSON.stringify({ checkBubble: txt.includes('【检定】'), subTitle: txt.includes('AI 主持人跑团'), staleKeeper: txt.includes('AI 守密人跑团') });
         })()`);
         // 诊断：onCheck 事件是否真的到达渲染进程（独立监听器）
         const r20 = await js(`(async () => {

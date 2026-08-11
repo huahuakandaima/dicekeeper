@@ -725,7 +725,7 @@ export function App() {
       {!roomJoined && (
         <aside className="sidebar">
           <h1>🎲 DiceKeeper</h1>
-              <p className="sub">AI 主持人跑团</p>
+          <p className="sub">AI 主持人跑团</p>
           {!sqliteOk && <p className="warn">⚠ SQLite 不可用（需 --experimental-sqlite）</p>}
           <button className="primary" onClick={() => { setShowNew(true); void rerollPreview(); }}>＋ 新建战役</button>
         <div className="campaign-list">
