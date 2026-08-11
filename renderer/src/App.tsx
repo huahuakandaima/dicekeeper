@@ -421,7 +421,7 @@ export function App() {
       setNotice(`✓ 本节已结束，摘要已存档（下一节${gmTitle}会记得本节）`);
       const s = await window.dk.session.start();
       await window.dk.session.open(s.id);
-            setMsgs((m) => [...m, { role: 'keeper', text: `—— 新的一节开始。${gmTitle}翻开了上一节的记录。` }]);
+      setMsgs((m) => [...m, { role: 'keeper', text: `—— 新的一节开始。${gmTitle}翻开了上一节的记录。` }]);
     } catch (e) {
       setNotice(`结束会话失败：${(e as Error).message.replace(/^Error invoking remote method '[^']+':\s*/, '')}`);
     }

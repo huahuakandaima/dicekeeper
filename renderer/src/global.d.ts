@@ -47,7 +47,7 @@ declare global {
       onChunk: (cb: (text: string) => void) => void; // 流式叙事逐段回调
       onCheck: (cb: (info: { skill: string; value: number; label: string; detail: string; takenRoll: number }) => void) => void; // 检定结果推送（AI 叙事前先显示骰面）
       scenario: {
-        info: () => Promise<{ id: string; name: string; hooks: string[] }>;
+        info: () => Promise<{ id: string; name: string; hooks: string[]; place?: string | null; person?: string | null }>;
         list: () => Promise<PackMeta[]>;
       };
       packs: {

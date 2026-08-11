@@ -20,7 +20,7 @@ export interface RulePack {
     skills: { name: string; base: number; category: string; action?: 'check' | 'narrative' | 'none' }[];
   };
   check_rules: Record<string, string>; // extreme/hard/normal/crit_fail 等，DSL 表达式
-  // GM/主持人的规则包称谓（"守密人"是 CoC 的；D&D 用"地下城主/DM"等）——UI 与默认人格按此显示，缺省"守密人"
+  // GM/主持人的规则包称谓（"守密人"是 CoC 的；D&D 用"地下城主/DM"等）——UI 与默认人格按此显示，缺省"主持人"
   gm_title?: string;
   modifiers?: { name: string; condition?: string }[];
   chargen?: {
