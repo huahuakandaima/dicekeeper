@@ -311,6 +311,18 @@ export function App() {
     if (d['幸运'] !== undefined) setLuckOverride(d['幸运']); // 记住本次重掷值
   }
 
+  // 单项重骰（§11.10：一键随机 + 单项重骰 + 微调）：重掷单个属性 → 更新编辑表单 → 衍生防抖自动重算
+  async function rerollAttr(field: string) {
+    if (!editSpec) return;
+    const rp = editModal === 'new' ? (selRulePackId || undefined) : undefined;
+    try {
+      const r = await window.dk.characters.rerollField(field, rp);
+      setEditSpec({ ...editSpec, attributes: { ...editSpec.attributes, [field]: r.value } });
+    } catch (e) {
+      setNotice(`重掷失败：${(e as Error).message}`);
+    }
+  }
+
   // 保存：建团模式把 spec 交给 create（并保持预览一致）；侧边栏模式直接替换当前卡
   async function saveCharEdit() {
     if (!editSpec) return;
@@ -1153,7 +1165,7 @@ export function App() {
                 <>
                   {editSpec && charFields && (
                     <>
-                      <CharEdit fields={charFields} spec={editSpec} derived={editDerived} onChange={setEditSpec} />
+                      <CharEdit fields={charFields} spec={editSpec} derived={editDerived} onChange={setEditSpec} onRerollAttr={(f) => void rerollAttr(f)} />
                       <div className="ce-tools">
                         <button className="ghost" onClick={rerollLuck}>🎲 重掷幸运</button>
                         <span className="dim">幸运 = 3d6×5，随机；其余衍生随属性自动算</span>
@@ -1190,7 +1202,7 @@ export function App() {
         <div className="modal" onClick={(e) => onModalMask(e, () => setEditModal(null))} onMouseDownCapture={DRAG_GUARD.onMouseDownCapture}>
           <div className="modal-body modal-wide" onClick={(e) => e.stopPropagation()}>
             <h2>编辑角色卡</h2>
-            <CharEdit fields={charFields} spec={editSpec} derived={editDerived} onChange={setEditSpec} />
+            <CharEdit fields={charFields} spec={editSpec} derived={editDerived} onChange={setEditSpec} onRerollAttr={(f) => void rerollAttr(f)} />
             <div className="ce-tools">
               <button className="ghost" onClick={rerollLuck}>🎲 重掷幸运</button>
               <span className="dim">技能右栏为初始值；保存后检定按新数值执行</span>

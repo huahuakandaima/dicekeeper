@@ -25,6 +25,7 @@ declare global {
       characters: {
         preview: (seed?: string, loaded?: boolean, rulePackId?: string) => Promise<CharPreview>;
         reroll: () => Promise<CharPreview>;
+        rerollField: (field: string, rulePackId?: string) => Promise<{ field: string; value: number }>; // §11.10 单项重骰
         fields: (rulePackId?: string) => Promise<CharFields>;
         derive: (spec: { attributes: Record<string, number>; age?: number }, seed?: string, rulePackId?: string) => Promise<Record<string, number>>;
         update: (spec: CharSpec, derivedOverrides?: Record<string, number>) => Promise<CharPreview>;

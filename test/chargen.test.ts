@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadRulePack } from '../src/rules.ts';
-import { generateCharacter, buildCharacter, characterFields, cocDbBuild, ChargenError } from '../src/chargen.ts';
+import { generateCharacter, buildCharacter, characterFields, cocDbBuild, rerollAttribute, ChargenError } from '../src/chargen.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -82,6 +82,28 @@ test('characterFields 合并属性与技能', () => {
   assert.equal(f.STR, c.attributes.STR);
   assert.equal(f['侦查'], c.skills['侦查']);
   assert.equal(f.SKILL, undefined); // 占位符由 adjudicate 层注入
+});
+
+// §11.10 单项重骰：重掷单个属性（按 chargen.attribute_methods 公式），范围与确定性
+test('rerollAttribute：按属性公式重掷，范围正确（STR 常规 3d6*5 ∈[15,90]，SIZ 非常规 ∈[40,90]）', () => {
+  for (let i = 0; i < 20; i++) {
+    const v1 = rerollAttribute(pack, 'STR', `rf-a-${i}`);
+    assert.ok(v1 >= 15 && v1 <= 90, `STR=${v1}`);
+    const v2 = rerollAttribute(pack, 'SIZ', `rf-b-${i}`);
+    assert.ok(v2 >= 40 && v2 <= 90, `SIZ=${v2}`);
+  }
+});
+
+test('rerollAttribute：同 seed 确定性；缺省公式回退 3d6*5；灌铅模式取更优', () => {
+  assert.equal(rerollAttribute(pack, 'STR', 'fixed'), rerollAttribute(pack, 'STR', 'fixed'));
+  // 无对应公式的字段回退 3d6*5（范围 [15,90]）
+  const v = rerollAttribute(pack, '不存在属性', 'fallback');
+  assert.ok(v >= 15 && v <= 90);
+  // 灌铅：多次试验均值应高于非灌铅（取两次更高）
+  const loaded = rerollAttribute(pack, 'STR', 'loaded', true);
+  const normal = rerollAttribute(pack, 'STR', 'normal');
+  assert.ok(loaded >= 15 && loaded <= 90);
+  assert.ok(normal >= 15 && normal <= 90);
 });
 
 // —— 手动车卡（§11.10 微调）——

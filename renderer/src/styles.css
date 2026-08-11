@@ -140,6 +140,9 @@ button.danger { background: #a04040; color: #fff; border-color: #a04040; }
 .ce-field input { width: 56px; padding: 5px; border: 1px solid var(--line); border-radius: 6px; text-align: center; }
 .ce-label { display: inline-flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .ce-base { color: var(--dim); font-size: 11px; width: 22px; text-align: right; }
+/* §11.10 单项重骰按钮（属性行 🎲） */
+.ce-reroll { border: none; background: transparent; cursor: pointer; font-size: 13px; padding: 2px 4px; border-radius: 4px; }
+.ce-reroll:hover { background: var(--panel); }
 .ce-derived-list { display: flex; flex-wrap: wrap; gap: 10px; }
 .ce-derived-item { background: #faf7f1; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
 .ce-skill-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 12px; max-height: 320px; overflow-y: auto; padding-right: 4px; }

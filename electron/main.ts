@@ -29,7 +29,7 @@ import { buildMemoryContext, renderMemoryBlock, generateSessionSummary, recentTe
 import { simulateNpcActions } from '../src/sim.ts';
 import { computeTension, hasCountdownPlot, buildTensionPrompt, DEFAULT_TENSION, type TensionSettings } from '../src/tension.ts';
 import { COC_ATTRIBUTE_DESC, COC_SKILL_DESC, COC_DERIVED_DESC, GENERIC_DESC } from '../src/coc7e-info.ts';
-import { generateCharacter, buildCharacter, characterFields, computeDerived, type CharacterSpec } from '../src/chargen.ts';
+import { generateCharacter, buildCharacter, characterFields, computeDerived, rerollAttribute, type CharacterSpec } from '../src/chargen.ts';
 import { World, parseMoveIntent } from '../src/world.ts';
 import { adjudicate } from '../src/adjudicate.ts';
 import { OpenAiCompatibleProvider, MockProvider, type Provider } from '../src/gateway/provider.ts';
@@ -718,6 +718,14 @@ ipcMain.handle('characters:preview', (_e, seed?: string, loaded?: boolean, ruleP
   const rp = rulePackId ? loadRulePackFor(rulePackId) : pack;
   const char = generateCharacter(rp, { seed: seed || `preview-${Date.now()}`, loaded: !!loaded });
   return summarizeChar(char);
+});
+// 单项重骰（§11.10：一键随机 + 单项重骰 + 微调）：重掷单个属性（手动编辑表单 🎲 按钮），
+// 公式按当前规则包 chargen.attribute_methods 匹配；衍生由前端 derive 防抖自动重算
+ipcMain.handle('characters:rerollField', (_e, field: string, rulePackId?: string) => {
+  if (!field || typeof field !== 'string') throw new Error('缺少属性名');
+  const rp = rulePackId ? loadRulePackFor(rulePackId) : currentRulePack();
+  const value = rerollAttribute(rp, field, `rf-${Date.now()}`);
+  return { field, value };
 });
 // 当前上下文规则包：战役已开 → 战役的规则包；否则默认（"不能换规则包"修复：重骰/手填/技能面板随战役规则包）
 function currentRulePack(): RulePack {
@@ -1665,9 +1673,11 @@ function createWindow(): void {
           const builtin = await window.dk.characters.fields('coc7e');
           return JSON.stringify({ tpl: tpl.gmTitle, custom: custom.gmTitle, builtin: builtin.gmTitle });
         })`);
+        // §11.10 单项重骰：rerollField 返回 {field, value} 且值在属性公式范围内（STR 常规 3d6*5 ∈[15,90]）
+        const r40 = await js(`window.dk.characters.rerollField('STR').then((r) => JSON.stringify({ field: r.field, ok: r.value >= 15 && r.value <= 90, v: r.value }))`);
         // 窗口标题带版本号（用户要求）：preventDefault 后 HTML title 不覆盖，标题 = DiceKeeper v<版本>
         const r38 = win.getTitle();
-        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 技能按钮类型=' + r37 + ' GM称谓=' + r39 + ' 窗口标题=' + r38 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
+        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 技能按钮类型=' + r37 + ' GM称谓=' + r39 + ' 单项重骰=' + r40 + ' 窗口标题=' + r38 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
         console.log(line);
         try { writeFileSync(join(app.getPath('temp'), 'dk-e2e-result.txt'), line, 'utf-8'); } catch { /* 非关键 */ }
       } catch (e) {

@@ -194,6 +194,21 @@ export function generateCharacter(pack: RulePack, opts: ChargenOptions = {}): Ch
   };
 }
 
+// 单项重骰（§11.10：一键随机 + 单项重骰 + 微调——规格要求，此前只实现了幸运重掷）：
+// 重掷单个属性——按 chargen.attribute_methods 匹配该字段公式（缺省 3d6*5），灌铅模式同样生效
+export function rerollAttribute(pack: RulePack, field: string, seed: string | number, loaded = false): number {
+  const cg = pack.chargen;
+  if (!cg) throw new ChargenError(`规则包 ${pack.id} 缺少 chargen 段`);
+  const formula = cg.attribute_methods?.find((m) => m.fields.includes(field))?.formula ?? '3d6*5';
+  const rng = makeRng(seed);
+  let r = roll(formula, rng);
+  if (loaded) {
+    const r2 = roll(formula, rng);
+    if (r2.total > r.total) r = r2;
+  }
+  return r.total;
+}
+
 // DB 表达式均值（v1：字符串形式 "+1d4" 掷一次取总值；纯数值直接返回）
 function parseDbAvg(db: string, rng: RNG): number {
   const m = /^([+-])(\d*)d(\d+)$/.exec(db);

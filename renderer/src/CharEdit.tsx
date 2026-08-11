@@ -1,5 +1,5 @@
-// renderer/src/CharEdit.tsx — 手动车卡编辑表单（§11.10 微调）
-// 属性/技能带悬浮说明（? 图标 hover 显示作用）；衍生值只读（主进程自动算）
+// renderer/src/CharEdit.tsx — 手动车卡编辑表单（§11.10 微调 + 单项重骰）
+// 属性/技能带悬浮说明（? 图标 hover 显示作用）；衍生值只读（主进程自动算）；属性行 🎲 = 单项重骰
 import type { CharFields, CharSpec } from './global.d.ts';
 import { InfoTip } from './InfoTip.tsx';
 
@@ -8,9 +8,10 @@ interface Props {
   spec: CharSpec;
   derived: Record<string, number>;
   onChange: (s: CharSpec) => void;
+  onRerollAttr?: (field: string) => void; // §11.10 单项重骰（重掷单个属性）
 }
 
-export function CharEdit({ fields, spec, derived, onChange }: Props) {
+export function CharEdit({ fields, spec, derived, onChange, onRerollAttr }: Props) {
   const setAttr = (k: string, v: string) => {
     const n = v === '' ? 0 : Number(v);
     onChange({ ...spec, attributes: { ...spec.attributes, [k]: n } });
@@ -62,6 +63,9 @@ export function CharEdit({ fields, spec, derived, onChange }: Props) {
               value={spec.attributes[a.name] ?? ''}
               onChange={(e) => setAttr(a.name, e.target.value)}
             />
+            {onRerollAttr && (
+              <button className="ce-reroll" title={`重掷「${a.name}」（按规则包属性公式）`} onClick={() => onRerollAttr(a.name)}>🎲</button>
+            )}
           </div>
         ))}
       </div>
