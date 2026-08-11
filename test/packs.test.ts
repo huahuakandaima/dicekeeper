@@ -360,3 +360,19 @@ test('parseAiOutput：YAML 输出正常解析；无识别字段返回 null', () 
   assert.equal(parseAiOutput('好的，我来生成一个剧本包。'), null);
   assert.equal(parseAiOutput(''), null);
 });
+
+// AI 输出智能解析：json 代码块 / 文字+JSON 混排 / JSON 尾部解释文字
+test('parseAiOutput：json 代码块与文字混排与尾部解释均能解析', () => {
+  // 文字 + JSON 混排（extractYaml 定位 { 后）
+  const mixed = '好的，这是生成的剧本包：\n{"id": "scen-mix", "name": "混排", "world": {"summary": "S"}}';
+  const obj1 = parseAiOutput(mixed);
+  assert.ok(obj1 && obj1.id === 'scen-mix');
+  // JSON 尾部带解释文字
+  const tail = '{"id": "scen-tail", "name": "尾部", "world": {"summary": "S"}}\n以上就是剧本包，有问题再问';
+  const obj2 = parseAiOutput(tail);
+  assert.ok(obj2 && obj2.id === 'scen-tail');
+  // ```json 代码块（extractYaml 已取块，此处验证直接喂块内容）
+  const jsonBlock = '{\n  "id": "scen-blk",\n  "name": "块",\n  "world": {"summary": "S"}\n}';
+  const obj3 = parseAiOutput(jsonBlock);
+  assert.ok(obj3 && obj3.id === 'scen-blk');
+});

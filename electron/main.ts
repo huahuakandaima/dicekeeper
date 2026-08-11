@@ -1165,14 +1165,17 @@ ipcMain.handle('editor:testLore', (_e, req: { obj: unknown; text: string; budget
 // 剧本包 target: pack | npc | location | world | lore | encounter | hooks
 // 规则包 target: rule-pack（整包骨架）
 function extractYaml(text: string): string {
-  // 优先取代码块（可能有多个，取最长的一个——AI 偶尔重复输出）
-  const blocks = [...text.matchAll(/```(?:yaml|yml)?\s*([\s\S]*?)```/g)].map((m) => m[1]);
+  // 优先取代码块（yaml/yml/json 标记均可；可能有多个，取最长——AI 偶尔重复输出）
+  const blocks = [...text.matchAll(/```(?:yaml|yml|json)?\s*([\s\S]*?)```/g)].map((m) => m[1]);
   if (blocks.length > 0) return blocks.reduce((a, b) => (b.length > a.length ? b : a));
-  // 无代码块：找顶层字段起点（id 优先，单点生成找具体字段）
+  // 无代码块：找 YAML 顶层字段起点（id 优先，单点生成找具体字段）
   for (const key of ['id:', 'npc_seeds:', 'locations:', 'world:', 'lore_entries:', 'encounters:', 'hooks:', 'character_sheet:', 'check_rules:']) {
     const i = text.indexOf(key);
     if (i >= 0) return text.slice(i);
   }
+  // 可能是 JSON 混在文字里：找第一个 {（交给 parseAiOutput 做 JSON 定位与尾部截断）
+  const b = text.indexOf('{');
+  if (b >= 0) return text.slice(b);
   return text;
 }
 const AI_TARGET_FIELD: Record<string, string> = {
@@ -1339,7 +1342,7 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
           { role: 'user', content: userParts + (attempt > 0 ? '\n\n（提示：上次输出无法解析，请严格两空格缩进输出纯 YAML（或 JSON 对象），不要任何解释文字、不要 markdown 代码块标记）' : '') },
         ],
         [],
-        { temperature: 0.7, maxTokens: 3000 },
+        { temperature: 0.7, maxTokens: 5000 }, // 整包内容大，3000 易截断（截断=解析失败高频原因）
       );
       rawText = extractYaml(res.content ?? '');
       raw = parseAiOutput(rawText);
@@ -1347,7 +1350,7 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
         parseErr = null;
         break;
       }
-      parseErr = new Error('输出无法解析为 YAML/JSON（可能是 JSON 或解释文字混入）');
+      parseErr = new Error(`输出无法解析为 YAML/JSON。AI 原文开头：${JSON.stringify(String(res.content ?? '').slice(0, 150))}…`);
     }
     if (parseErr || !raw) {
       return { ok: false, error: `AI 输出的格式有问题（已自动重试 1 次仍失败）：${parseErr?.message ?? ''}。建议稍后点「生成」重试` };

@@ -20,18 +20,38 @@ export function sanitizeAiYaml(src: string): string {
 
 // AI 生成输出智能解析（修复"按规则包生成后应用全是模板占位"）：
 // LLM 偶尔输出 JSON（DeepSeek 注入规则包摘要后尤其容易），自研 YAML 解析器会把 JSON 解析成怪异结构
-// → 先试 JSON（以 { 开头），再试 YAML；两者都失败或结果无识别字段 → 返回 null（触发重试）
+// → 先试 JSON（整段/定位第一个 {/尾部截断），再试 YAML；两者都失败或结果无识别字段 → 返回 null（触发重试）
 const AI_PACK_KEYS = ['id', 'name', 'version', 'requires', 'world', 'npc_seeds', 'locations', 'plot_threads', 'hooks', 'lore_entries', 'encounters', 'character_sheet', 'check_rules', 'dice_schema'];
+function tryJson(s: string): Record<string, unknown> | null {
+  const t = s.trim();
+  if (!/^[{[]/.test(t)) return null;
+  try {
+    const obj = JSON.parse(t) as unknown;
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) return obj as Record<string, unknown>;
+  } catch {
+    // 尾部可能带解释文字/截断（LLM 输出 `{...}\n解释` 常见）：从最后一个 } 截断重试
+    const end = t.lastIndexOf('}');
+    if (end > 0) {
+      try {
+        const obj = JSON.parse(t.slice(0, end + 1)) as unknown;
+        if (obj && typeof obj === 'object' && !Array.isArray(obj)) return obj as Record<string, unknown>;
+      } catch { /* 继续 */ }
+    }
+  }
+  return null;
+}
 export function parseAiOutput(text: string): Record<string, unknown> | null {
   const clean = sanitizeAiYaml(text).trim();
   if (!clean) return null;
-  // 尝试 JSON（对象或数组开头）
-  if (clean.startsWith('{') || clean.startsWith('[')) {
-    try {
-      const obj = JSON.parse(clean) as unknown;
-      if (obj && typeof obj === 'object' && !Array.isArray(obj)) return obj as Record<string, unknown>;
-    } catch { /* 不是 JSON，继续 YAML */ }
+  // JSON：整段是 JSON，或定位第一个 {（文字 + JSON 混排）
+  const whole = tryJson(clean);
+  if (whole) return whole;
+  const brace = clean.indexOf('{');
+  if (brace > 0) {
+    const fromBrace = tryJson(clean.slice(brace));
+    if (fromBrace) return fromBrace;
   }
+  // YAML
   try {
     const obj = parseYaml(clean) as Record<string, unknown>;
     const keys = Object.keys(obj);
