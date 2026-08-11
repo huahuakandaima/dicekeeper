@@ -94,7 +94,7 @@ function loadScenarioById(id: string): ScenarioPack | null {
 }
 function listScenarioPacks(): PackMeta[] {
   return [
-    { id: scenario.id, name: scenario.name, version: scenario.version, type: 'scenario', isBuiltin: true },
+    { id: scenario.id, name: scenario.name, version: scenario.version, type: 'scenario', isBuiltin: true, requires: scenario.requires },
     ...packStore.listImported().filter((m) => m.type === 'scenario'),
   ];
 }
@@ -672,9 +672,13 @@ ipcMain.handle('campaign:create', (_e, opts: { name: string; seed?: string; char
   } else {
     char = generateCharacter(activePack, { seed: opts.seed ?? `ui-${Date.now()}`, name: opts.charName?.trim() || '无名调查员', loaded: opts.loaded });
   }
-  // 剧本包可选（P3a：内置 + 导入包）
+  // 剧本包可选（P3a：内置 + 导入包）；剧本包-规则包绑定（用户要求：剧情包只能根据规则包选择）——
+  // requires 与所选规则包不匹配直接拒绝建团（如 NBA 剧本包配 CoC 规则包），防止"加载了默认剧情"类错配
   const sc = opts.scenarioPackId ? loadScenarioById(opts.scenarioPackId) : scenario;
   if (!sc) throw new Error(`剧本包不存在: ${opts.scenarioPackId}`);
+  if (sc.requires && sc.requires !== activePack.id) {
+    throw new Error(`剧本包「${sc.name}」要求规则包「${sc.requires}」，当前所选为「${activePack.name}」——请先选择配套规则包`);
+  }
   const c = store.createCampaign({ name: opts.name, rulePackId: activePack.id, scenarioPackId: sc.id, characters: [char], personaId: opts.personaId });
   // 剧本包初始化：世界设定 + NPC/地点/线索种子 + 世界书条目落库（§3.5）
   store.initScenarioWorld(c.id, sc);
@@ -1741,7 +1745,17 @@ function createWindow(): void {
           const info = await window.dk.scenario.info();
           return JSON.stringify({ imported: true, id: info.id, name: info.name, hook: String(info.hooks[0]).slice(0, 10) });
         })`);
-        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
+        // 剧本包-规则包绑定校验（用户要求：剧情包只能根据规则包选择）：
+        // 雾港(coc7e) + 其他规则包 → 建团拒绝；雾港 + coc7e → 放行
+        const r36 = await js(`window.dk.editor.create({ type: 'rule', name: 'E2E 绑定规则包' }).then(async (c) => {
+          const rpId = c.ok && c.meta ? c.meta.id : 'rule-none';
+          const bad = await window.dk.campaign.create({ name: 'E2E 绑定校验', seed: 'bind-x', scenarioPackId: 'fog_harbor', rulePackId: rpId })
+            .then(() => 'ACCEPTED').catch(() => 'REJECTED');
+          const good = await window.dk.campaign.create({ name: 'E2E 配套建团', seed: 'bind-y', scenarioPackId: 'fog_harbor', rulePackId: 'coc7e' })
+            .then(() => 'OK').catch(() => 'FAIL');
+          return JSON.stringify({ bad, good });
+        })`);
+        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
         console.log(line);
         try { writeFileSync(join(app.getPath('temp'), 'dk-e2e-result.txt'), line, 'utf-8'); } catch { /* 非关键 */ }
       } catch (e) {

@@ -477,6 +477,19 @@ export function App() {
       setPreviewBusy(false);
     }
   }
+  // 剧本包-规则包联动（用户要求：剧情包只能根据规则包选择）：选/换规则包时自动切到第一个配套剧本包
+  function handleRulePackChange(id: string) {
+    setSelRulePackId(id);
+    const rpId = id || (rulePacksList[0]?.id ?? 'coc7e');
+    const compat = scenarioPacks.filter((sp) => !sp.requires || sp.requires === rpId);
+    if (!compat.some((sp) => sp.id === selScenarioId)) setSelScenarioId(compat[0]?.id ?? '');
+  }
+  // 当前所选规则包 id（空=默认内置 CoC 7e）；配套剧本包（requires 匹配；无 requires 视为通用）
+  const selRulePackIdFor = selRulePackId || (rulePacksList[0]?.id ?? 'coc7e');
+  const compatScenarios = scenarioPacks.filter((sp) => !sp.requires || sp.requires === selRulePackIdFor);
+  function ruleNameOf(id: string): string {
+    return rulePacksList.find((r) => r.id === id)?.name ?? id;
+  }
 
   // Electron 不支持 window.prompt/confirm —— 用自绘弹窗
   async function doCreateCampaign() {
@@ -821,7 +834,7 @@ export function App() {
               onChange={(e) => onInputChange(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && send()}
               placeholder={roomJoined ? '描述你的行动…（由房主守密人响应）' : '描述你的行动…（例：去渔市码头 / @埃德加 聊聊 / 查看货舱）'}
-              disabled={(!campaignId && !roomJoined) || busy}
+              disabled={busy}
             />
             {atCandidates.length > 0 && (
               <div className="at-pop">
@@ -833,7 +846,8 @@ export function App() {
               </div>
             )}
           </div>
-          <button className="primary" onClick={send} disabled={(!campaignId && !roomJoined) || busy}>发送</button>
+          {/* 修复：onClick 曾直接绑 send —— React 会把 click 事件当 optText 传入导致 TypeError 静默失败（"发送键不管用只能回车"） */}
+          <button className="primary" onClick={() => send()} disabled={busy}>{busy ? '守密人思考中…' : '发送'}</button>
         </div>
         {notice && <div className="notice">{notice}</div>}
       </main>
@@ -1049,13 +1063,13 @@ export function App() {
             </label>
             {rulePacksList.length > 0 && (
               <label>规则包
-                <select value={selRulePackId} onChange={(e) => setSelRulePackId(e.target.value)}>
+                <select value={selRulePackId} onChange={(e) => handleRulePackChange(e.target.value)}>
                   <option value="">默认（克苏鲁的呼唤 7 版）</option>
                   {rulePacksList.map((rp) => (
                     <option key={rp.id} value={rp.id}>{rp.name} v{rp.version}</option>
                   ))}
                 </select>
-                <span className="dim">决定属性/技能/检定规则；自建/导入的规则包在此选择（默认 CoC 7e）。剧本包依赖的规则包会被所选覆盖</span>
+                <span className="dim">决定属性/技能/检定规则；剧本包下拉会随所选规则包联动（剧情包只能配套对应规则包）</span>
                 {selRulePackId && (
                   <button className="ghost" onClick={() => void applyRulePack()} disabled={previewBusy}>
                     {editMode ? '🔄 按规则包刷新编辑' : '🎲 按规则包生成角色卡'}
@@ -1065,11 +1079,16 @@ export function App() {
             )}
             {scenarioPacks.length > 0 && (
               <label>剧本包
-                <select value={selScenarioId} onChange={(e) => setSelScenarioId(e.target.value)}>
-                  {scenarioPacks.map((sp) => (
-                    <option key={sp.id} value={sp.id}>{sp.name} v{sp.version}{sp.isBuiltin ? '（内置）' : ''}</option>
-                  ))}
-                </select>
+                {/* 只显示与所选规则包配套的剧本包（用户要求：剧情包只能根据规则包选择） */}
+                {compatScenarios.length > 0 ? (
+                  <select value={selScenarioId} onChange={(e) => setSelScenarioId(e.target.value)}>
+                    {compatScenarios.map((sp) => (
+                      <option key={sp.id} value={sp.id}>{sp.name} v{sp.version}{sp.isBuiltin ? '（内置）' : ''}（{sp.requires ? `规则：${ruleNameOf(sp.requires)}` : '通用'}）</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="dim">该规则包暂无配套剧本包——可在设置→内容包「新建剧本包」时指定 requires 为该规则包，或导入配套 .dk</span>
+                )}
                 <span className="dim">建团即载入该剧本的世界观、NPC 种子与线索；更多剧本包可在设置→内容包导入 .dk</span>
               </label>
             )}
