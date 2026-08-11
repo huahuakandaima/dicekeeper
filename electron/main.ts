@@ -425,17 +425,34 @@ function lanAddresses(): string[] {
   return out;
 }
 
-// 房主收到玩家行动：走本地引擎全流程（判定/移动/张力/AI）→ 广播叙事+骰面+可点选项；房主 UI 同步显示
+// 房主收到玩家行动：玩家消息立即显示在房主 UI → 进串行队列（多人正确性：一次只处理一条，保证顺序、避免并发写库）→ 逐条走本地引擎全流程 → 广播
+let roomQueue: { p: RoomPlayerInfo; text: string }[] = [];
+let roomProcessing = false;
+
 async function handleRoomPlayerChat(p: RoomPlayerInfo, text: string): Promise<void> {
   mainWindow?.webContents.send('room:hostUser', { name: p.name, text });
+  roomQueue.push({ p, text });
+  void drainRoomQueue();
+}
+
+async function drainRoomQueue(): Promise<void> {
+  if (roomProcessing) return;
+  roomProcessing = true;
   try {
-    const r = await runPlayerTurn(text, undefined, p.name);
-    const payload = { text: r.narrative, dice: r.diceResults, prompt: r.promptPlayer ?? null };
-    room?.broadcast('narrative', payload);
-    mainWindow?.webContents.send('room:hostNarrative', payload);
-  } catch (e) {
-    const msg = (e as Error).message.replace(/^Error invoking remote method '[^']+':\s*/, '');
-    room?.broadcast('system', { text: `处理失败：${msg}` });
+    while (roomQueue.length > 0) {
+      const item = roomQueue.shift()!;
+      try {
+        const r = await runPlayerTurn(item.text, undefined, item.p.name);
+        const payload = { text: r.narrative, dice: r.diceResults, prompt: r.promptPlayer ?? null };
+        room?.broadcast('narrative', payload);
+        mainWindow?.webContents.send('room:hostNarrative', payload);
+      } catch (e) {
+        const msg = (e as Error).message.replace(/^Error invoking remote method '[^']+':\s*/, '');
+        room?.broadcast('system', { text: `处理失败：${msg}` });
+      }
+    }
+  } finally {
+    roomProcessing = false;
   }
 }
 
