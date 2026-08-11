@@ -77,6 +77,7 @@ export function App() {
   const [joinState, setJoinState] = useState<'idle' | 'connecting' | 'joined'>('idle');
   const [joinError, setJoinError] = useState('');
   const [roomJoined, setRoomJoined] = useState(false); // 玩家模式激活（发送走房间通道）
+  const [settingsTab, setSettingsTab] = useState<'ai' | 'local' | 'drama' | 'persona' | 'packs'>('ai'); // 设置弹窗分模块 Tab
   const [selPersonaId, setSelPersonaId] = useState(''); // 建团弹窗选择
   const [pendingText, setPendingText] = useState(''); // 流式叙事累积（AI 思考时逐字显示）
   const [atCandidates, setAtCandidates] = useState<{ id: string; name: string; type: string; location?: string }[]>([]);
@@ -570,6 +571,7 @@ export function App() {
   }, []);
   useEffect(() => {
     if (!showSettings) return;
+    setSettingsTab('ai'); // 每次打开设置回到第一个模块（弹窗太长问题：分 Tab 显示）
     setHwInfo(null);
     window.dk.ollama.status().then((s) => setOllama({ checked: true, running: s.running, managed: s.managed, version: s.version, openaiUrl: s.openaiUrl }));
     window.dk.ollama.models().then((ms) => setInstalledModels(ms.map((m) => m.name)));
@@ -1100,8 +1102,22 @@ export function App() {
 
       {showSettings && (
         <div className="modal" onClick={(e) => onModalMask(e, () => setShowSettings(false))}>
-          <div className="modal-body" onClick={(e) => e.stopPropagation()}>
-            <h2>AI 服务设置（OpenAI 兼容）</h2>
+          <div className="modal-body settings-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>设置</h2>
+            <div className="settings-tabs">
+              {([
+                ['ai', 'AI 服务'],
+                ['local', '本地模式'],
+                ['drama', '戏剧引擎'],
+                ['persona', '主持人风格'],
+                ['packs', '内容包'],
+              ] as const).map(([key, label]) => (
+                <button key={key} className={settingsTab === key ? 'settings-tab active' : 'settings-tab'} onClick={() => setSettingsTab(key)}>{label}</button>
+              ))}
+            </div>
+
+            {settingsTab === 'ai' && (
+            <>
             <div className="preset-row">
               <span className="dim">预设：</span>
               {Object.entries(PRESETS).map(([k, p]) => (
@@ -1130,7 +1146,11 @@ export function App() {
               )}
             </div>
             <p className="hint">预设仅填入地址与建议模型名，密钥需自己粘贴；「测试连接」会拉取该服务的可用模型列表，点击即可选用。</p>
+            </>
+            )}
 
+            {settingsTab === 'local' && (
+            <>
             {/* P6 本地模式（§3.2：Ollama 应用内托管 + 硬件检测推荐模型，抄 Jan Model Hub 交互） */}
             <div className="packs-box">
               <div className="packs-head">
@@ -1203,7 +1223,11 @@ export function App() {
                 </>
               )}
             </div>
+            </>
+            )}
 
+            {settingsTab === 'drama' && (
+            <>
             {/* P4 张力仪表（§11.7 戏剧引擎：玩家可调滑杆，本地数值注入 prompt） */}
             <div className="packs-box">
               <div className="packs-head"><b>戏剧引擎（张力仪表）</b></div>
@@ -1222,7 +1246,11 @@ export function App() {
                 </label>
               ))}
             </div>
+            </>
+            )}
 
+            {settingsTab === 'persona' && (
+            <>
             {/* B5 人格包（§3.6：预设 6 档 + 玩家自建 + 全局默认） */}
             <div className="packs-box">
               <div className="packs-head">
@@ -1275,6 +1303,11 @@ export function App() {
               )}
               <p className="hint">人格影响守密人的语气/风格/裁决倾向；建团时可选，也可在此设全局默认。自建人格存本机。</p>
             </div>
+            </>
+            )}
+
+            {settingsTab === 'packs' && (
+            <>
             <div className="packs-box">
               <div className="packs-head">
                 <b>内容包（规则包 / 剧本包）</b>
@@ -1310,6 +1343,8 @@ export function App() {
               {packNotice && <div className="pack-notice">{packNotice}</div>}
               <p className="hint">导出：把包分享给朋友，对方在「内容包→导入 .dk」即可使用；剧本包导入时会检查依赖的规则包。✏️ 编辑：可视化修改内容（内置包保存时自动另存为副本）。</p>
             </div>
+            </>
+            )}
             <div className="modal-actions">
               <button className="primary" onClick={saveSettings}>保存</button>
               <button className="ghost" onClick={() => setShowSettings(false)}>取消</button>

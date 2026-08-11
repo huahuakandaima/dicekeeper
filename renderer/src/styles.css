@@ -186,6 +186,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .room-banner { display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: #eef4ee; color: var(--ok); font-size: 13px; border-bottom: 1px solid var(--line); }
 .room-banner .ghost { margin-left: auto; }
 
+/* 设置弹窗分模块 Tab（弹窗太长看不到顶/底的修复） */
+.settings-modal { max-height: 86vh; display: flex; flex-direction: column; }
+.settings-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.settings-tab { padding: 5px 14px; border: 1px solid var(--line); border-radius: 14px; background: #fff; font-size: 13px; color: var(--dim); cursor: pointer; }
+.settings-tab.active { background: #e8e0d2; color: #7a5c3e; font-weight: 500; border-color: #d8cdb8; }
+.settings-modal > .packs-box, .settings-modal > .preset-row, .settings-modal > label, .settings-modal > .test-row, .settings-modal > .hint, .settings-modal > .modal-actions { flex-shrink: 0; }
+
 /* 内容编辑器（P3b） */
 .editor-modal { width: 880px; max-height: 92vh; }
 .editor-modal h2 { font-size: 15px; }
