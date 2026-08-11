@@ -33,6 +33,11 @@ export interface RulePack {
   rules_reference?: string;
 }
 
+// GM/主持人称谓：规则包 gm_title 决定，缺省"主持人"（"守密人"是 CoC 的叫法，需规则包显式声明）
+export function gmTitleOf(rp: { gm_title?: string }): string {
+  return rp.gm_title?.trim() || '主持人';
+}
+
 // —— mini YAML ——
 export function parseYaml(src: string): unknown {
   const lines = src.split(/\r?\n/).map((l, i) => ({ raw: l, n: i + 1 }));

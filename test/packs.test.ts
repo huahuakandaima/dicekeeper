@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { serializeYaml } from '../src/yaml-write.ts';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => readFileSync(p, 'utf-8');
-import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, parseAiOutput, testPackCheck, testPackDistribution, testPackLore, ensureChargen } from '../src/packs.ts';
+import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, parseAiOutput, testPackCheck, testPackDistribution, testPackLore, ensureChargen, scenarioRuleMatch } from '../src/packs.ts';
 import { generateCharacter } from '../src/chargen.ts';
 import { loadScenarioPack } from '../src/scenario.ts';
 import { loadRulePack, parseYaml } from '../src/rules.ts';
@@ -292,6 +292,14 @@ test('normalizeGeneratedPack：中文属性 + 模板兜底 chargen → 车卡出
   assert.deepEqual(Object.keys(char.attributes).sort(), ['内功', '武力', '身法', '慧根'].sort());
   // 兜底衍生公式引用模板英文字段（SIZ/CON）→ 求值兜底回退首属性，不炸
   for (const v of Object.values(char.derived)) assert.ok(Number.isFinite(v as number));
+});
+
+// 剧本包-规则包绑定（用户要求"剧情包只能根据规则包选择"）——纯函数，建团校验同款
+test('scenarioRuleMatch：requires 匹配/空/错配', () => {
+  assert.equal(scenarioRuleMatch({ requires: 'coc7e' }, 'coc7e'), true);   // 匹配
+  assert.equal(scenarioRuleMatch({ requires: 'coc7e' }, 'rule-nba'), false); // 错配拒绝
+  assert.equal(scenarioRuleMatch({ requires: undefined }, 'rule-nba'), true); // 无 requires 视为通用
+  assert.equal(scenarioRuleMatch(null, 'rule-nba'), true);                   // 无剧本包
 });
 
 test('ensureChargen：老规则包缺 chargen → 加载兜底补全，直接可车卡（中文属性不脱节）', () => {

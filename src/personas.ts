@@ -110,3 +110,8 @@ export function renderPersona(p: Persona): string {
 export function findPersona(presets: Persona[], custom: Persona[], id: string): Persona | null {
   return [...presets, ...custom].find((p) => p.id === id) ?? null;
 }
+
+// 无自定义人格时的默认人格段：按规则包 gm_title 生成（不同规则包主持人叫法不同：守密人/地下城主/主持人…）
+export function defaultPersonaText(gmTitle: string): string {
+  return `你是${gmTitle}，冷静、克制、营造氛围。用中文叙事，描写注重感官细节，让玩家做选择，不要替玩家做决定。`;
+}

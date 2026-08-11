@@ -21,7 +21,7 @@ for (const stream of [process.stdout, process.stderr]) {
 
 // —— 引擎层 ——
 import { CampaignStore, toChatMessages, trimHistoryToWindow, type StoredMessage } from '../src/campaign.ts';
-import { loadRulePack, parseYaml } from '../src/rules.ts';
+import { loadRulePack, parseYaml, gmTitleOf } from '../src/rules.ts';
 import { serializeYaml } from '../src/yaml-write.ts';
 import { loadScenarioPack } from '../src/scenario.ts';
 import { matchLore } from '../src/lore.ts';
@@ -36,7 +36,9 @@ import { OpenAiCompatibleProvider, MockProvider, type Provider } from '../src/ga
 import { runChat, extractNarrativePrefix } from '../src/gateway/chat.ts';
 import { buildSystemPrompt } from '../src/gateway/prompt.ts';
 import type { ToolContext } from '../src/gateway/tools.ts';
-import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, loadImportedRulePack, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, parseAiOutput, genPackId, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, ensureChargen, type PackMeta, type PackSummary } from '../src/packs.ts';
+import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, loadImportedRulePack, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, parseAiOutput, genPackId, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, ensureChargen, scenarioRuleMatch, type PackMeta, type PackSummary } from '../src/packs.ts';
+import { SerialQueue } from '../src/serial-queue.ts';
+import { defaultPersonaText } from '../src/personas.ts';
 import { PRESET_PERSONAS, renderPersona, validatePersona, findPersona, type Persona } from '../src/personas.ts';
 import { checkOllama, listOllamaModels, pullOllamaModel, downloadFile, recommendModel, OLLAMA_DOWNLOAD_URL, OLLAMA_OPENAI_URL } from '../src/ollama.ts';
 import { HWINFO_PS_SCRIPT, parseHwInfo } from '../src/hwinfo.ts';
@@ -159,18 +161,13 @@ let mainWindow: BrowserWindow | null = null; // 流式叙事转发目标
 let provider: Provider = new MockProvider('offline', []); // 未配置 API 时离线兜底
 const DEFAULT_PERSONA = '你是主持人，冷静、克制、营造氛围。用中文叙事，描写注重感官细节，让玩家做选择，不要替玩家做决定。';
 
-// GM/主持人称谓：规则包 gm_title 决定（"守密人"是 CoC 的；D&D 用"地下城主"等），缺省"主持人"
-function gmTitleOf(rp: RulePack): string {
-  const t = rp.gm_title?.trim();
-  return t || '主持人';
-}
-// 无自定义人格时的默认人格段：按当前战役规则包的 gm_title 生成（不同规则包主持人叫法不同）
+// GM/主持人称谓与默认人格段已下沉引擎层（src/rules.ts gmTitleOf / src/personas.ts defaultPersonaText），可单测
 function defaultPersonaFor(campaignId: string | null): string {
   let gm = '主持人';
   if (campaignId) {
     try { gm = gmTitleOf(loadRulePackFor(store.loadCampaign(campaignId).rulePackId)); } catch { /* 战役可能已删 */ }
   }
-  return `你是${gm}，冷静、克制、营造氛围。用中文叙事，描写注重感官细节，让玩家做选择，不要替玩家做决定。`;
+  return defaultPersonaText(gm);
 }
 
 // —— 人格包（B5，§3.6：预设 6 档 + 玩家自建 + 战役绑定）——
@@ -460,45 +457,27 @@ function lanAddresses(): string[] {
 }
 
 // 房主收到玩家行动：玩家消息立即显示在房主 UI → 进串行队列（多人正确性：一次只处理一条，保证顺序、避免并发写库）→ 逐条走本地引擎全流程 → 广播
-// 队列项：text 行动文本；source 发言人名（玩家消息落库带 [昵称] 前缀，房主消息为 undefined 不加前缀）；resolve/reject 供房主 chat:send 等待结果
+// 队列项：text 行动文本；source 发言人名（玩家消息落库带 [昵称] 前缀，房主消息为 undefined 不加前缀）
+// SerialQueue（src/serial-queue.ts）抽出后行为不变且可单测（test/serial-queue.test.ts）
 type PlayerTurnResult = { narrative: string; diceResults: string[]; issues: { kind: string; message: string }[]; messageId?: number; promptPlayer?: string | null };
-let roomQueue: { text: string; source?: string; resolve?: (r: PlayerTurnResult) => void; reject?: (e: Error) => void }[] = [];
-let roomProcessing = false;
+const roomQueue = new SerialQueue<{ text: string; source?: string }, PlayerTurnResult>(async (item) => {
+  const r = await runPlayerTurn(item.text, undefined, item.source);
+  const payload = { text: r.narrative, dice: r.diceResults, prompt: r.promptPlayer ?? null };
+  room?.broadcast('narrative', payload);
+  mainWindow?.webContents.send('room:hostNarrative', payload);
+  return r;
+});
 
 function enqueueRoomTurn(item: { text: string; source?: string }): Promise<PlayerTurnResult> {
-  return new Promise((resolve, reject) => {
-    roomQueue.push({ ...item, resolve, reject });
-    void drainRoomQueue();
-  });
+  return roomQueue.enqueue(item);
 }
 
 async function handleRoomPlayerChat(p: RoomPlayerInfo, text: string): Promise<void> {
   mainWindow?.webContents.send('room:hostUser', { name: p.name, text });
-  roomQueue.push({ text, source: p.name });
-  void drainRoomQueue();
-}
-
-async function drainRoomQueue(): Promise<void> {
-  if (roomProcessing) return;
-  roomProcessing = true;
-  try {
-    while (roomQueue.length > 0) {
-      const item = roomQueue.shift()!;
-      try {
-        const r = await runPlayerTurn(item.text, undefined, item.source);
-        const payload = { text: r.narrative, dice: r.diceResults, prompt: r.promptPlayer ?? null };
-        room?.broadcast('narrative', payload);
-        mainWindow?.webContents.send('room:hostNarrative', payload);
-        item.resolve?.(r);
-      } catch (e) {
-        const msg = (e as Error).message.replace(/^Error invoking remote method '[^']+':\s*/, '');
-        room?.broadcast('system', { text: `处理失败：${msg}` });
-        item.reject?.(e as Error);
-      }
-    }
-  } finally {
-    roomProcessing = false;
-  }
+  void roomQueue.enqueue({ text, source: p.name }).catch((e) => {
+    const msg = (e as Error).message.replace(/^Error invoking remote method '[^']+':\s*/, '');
+    room?.broadcast('system', { text: `处理失败：${msg}` });
+  });
 }
 
 // —— IPC：联机（房主）——
@@ -534,8 +513,7 @@ ipcMain.handle('room:close', async () => {
     roomServer = null;
   }
   // 关房清理队列状态（防残留：下次开房不应继承旧队列/处理标记）
-  for (const item of roomQueue) item.reject?.(new Error('房间已关闭'));
-  roomQueue = [];
+  roomQueue.clear(new Error('房间已关闭'));
   mainWindow?.webContents.send('room:players', { players: [], notice: '房间已关闭' });
   return { ok: true };
 });
@@ -688,11 +666,10 @@ ipcMain.handle('campaign:create', (_e, opts: { name: string; seed?: string; char
   } else {
     char = generateCharacter(activePack, { seed: opts.seed ?? `ui-${Date.now()}`, name: opts.charName?.trim() || '无名调查员', loaded: opts.loaded });
   }
-  // 剧本包可选（P3a：内置 + 导入包）；剧本包-规则包绑定（用户要求：剧情包只能根据规则包选择）——
-  // requires 与所选规则包不匹配直接拒绝建团（如 NBA 剧本包配 CoC 规则包），防止"加载了默认剧情"类错配
+  // 剧本包-规则包绑定（用户要求：剧情包只能根据规则包选择）——requires 与所选规则包不匹配直接拒绝建团
   const sc = opts.scenarioPackId ? loadScenarioById(opts.scenarioPackId) : scenario;
   if (!sc) throw new Error(`剧本包不存在: ${opts.scenarioPackId}`);
-  if (sc.requires && sc.requires !== activePack.id) {
+  if (!scenarioRuleMatch(sc, activePack.id)) {
     throw new Error(`剧本包「${sc.name}」要求规则包「${sc.requires}」，当前所选为「${activePack.name}」——请先选择配套规则包`);
   }
   const c = store.createCampaign({ name: opts.name, rulePackId: activePack.id, scenarioPackId: sc.id, characters: [char], personaId: opts.personaId });

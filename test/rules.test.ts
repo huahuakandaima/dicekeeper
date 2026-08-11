@@ -1,7 +1,7 @@
 // test/rules.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadRulePack, parseYaml, RulePackError, validateRulePack } from '../src/rules.ts';
+import { loadRulePack, parseYaml, RulePackError, validateRulePack, gmTitleOf } from '../src/rules.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -139,4 +139,9 @@ test('校验：gm_title 可选；合法字符串接受、非法类型拒绝；�
   // 内置 coc7e 显式声明守密人
   const pack = loadRulePack(join(RULES_DIR, 'coc7e.yaml'));
   assert.equal(pack.gm_title, '守密人');
+  // gmTitleOf：规则包 gm_title 决定，缺省"主持人"（"守密人"是 CoC 的叫法，需显式声明）
+  assert.equal(gmTitleOf(pack), '守密人');
+  assert.equal(gmTitleOf({ gm_title: '地下城主' }), '地下城主');
+  assert.equal(gmTitleOf({}), '主持人');
+  assert.equal(gmTitleOf({ gm_title: '   ' }), '主持人');
 });

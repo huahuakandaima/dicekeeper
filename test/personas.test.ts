@@ -1,7 +1,13 @@
 // test/personas.test.ts — 人格包（§3.6：预设/校验/渲染）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PRESET_PERSONAS, renderPersona, validatePersona, findPersona, PersonaError } from '../src/personas.ts';
+import { PRESET_PERSONAS, renderPersona, validatePersona, findPersona, defaultPersonaText, PersonaError } from '../src/personas.ts';
+
+test('defaultPersonaText：默认人格段按 gm_title 生成（不同规则包主持人叫法不同）', () => {
+  assert.match(defaultPersonaText('守密人'), /^你是守密人，/);
+  assert.match(defaultPersonaText('地下城主'), /^你是地下城主，/);
+  assert.match(defaultPersonaText('总经理'), /^你是总经理，/);
+});
 
 test('预设 6 档齐备，字段完整', () => {
   assert.equal(PRESET_PERSONAS.length, 6);
