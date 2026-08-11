@@ -23,10 +23,10 @@ declare global {
         tokens: (id?: string) => Promise<{ ok: boolean; campaignId?: string; messages?: number; system?: number; total?: number; msgCount?: number; error?: string }>;
       };
       characters: {
-        preview: (seed?: string, loaded?: boolean) => Promise<CharPreview>;
+        preview: (seed?: string, loaded?: boolean, rulePackId?: string) => Promise<CharPreview>;
         reroll: () => Promise<CharPreview>;
-        fields: () => Promise<CharFields>;
-        derive: (spec: { attributes: Record<string, number>; age?: number }, seed?: string) => Promise<Record<string, number>>;
+        fields: (rulePackId?: string) => Promise<CharFields>;
+        derive: (spec: { attributes: Record<string, number>; age?: number }, seed?: string, rulePackId?: string) => Promise<Record<string, number>>;
         update: (spec: CharSpec, derivedOverrides?: Record<string, number>) => Promise<CharPreview>;
       };
       session: {

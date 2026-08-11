@@ -258,14 +258,17 @@ export function App() {
   }
 
   // —— 手填车卡（§11.10 微调：随机打底 → 手动改）——
-  async function ensureCharFields() {
-    if (!charFields) setCharFields(await window.dk.characters.fields());
-    return charFields ?? (await window.dk.characters.fields());
+  // rp 为建团弹窗选中的规则包（换规则包后字段随之变化，不缓存）
+  async function ensureCharFields(rp?: string) {
+    const f = await window.dk.characters.fields(rp);
+    setCharFields(f);
+    return f;
   }
 
-  // 打开编辑：source='new' 用随机预览打底（建团弹窗），'existing' 用当前角色卡（侧边栏）
+  // 打开编辑：source='new' 用随机预览打底（建团弹窗，按所选规则包），'existing' 用当前角色卡（侧边栏）
   async function openCharEdit(source: 'new' | 'existing') {
-    const f = await ensureCharFields();
+    const rp = source === 'new' ? (selRulePackId || undefined) : undefined;
+    const f = await ensureCharFields(rp);
     const from = source === 'new' ? preview : (char ? { ...char, name: char.name, skills: char.skills } : null);
     const spec: CharSpec = {
       name: from?.name ?? charName ?? '无名调查员',
@@ -279,23 +282,25 @@ export function App() {
     setEditSpec(spec);
     setEditModal(source);
     // 首次衍生
-    const d = await window.dk.characters.derive({ attributes: spec.attributes, age: spec.age });
+    const d = await window.dk.characters.derive({ attributes: spec.attributes, age: spec.age }, undefined, rp);
     setEditDerived(d);
   }
 
   // 表单改动：更新 spec + 防抖重算衍生（幸运含随机，可点重掷）
   useEffect(() => {
     if (!editSpec || !editModal) return;
+    const rp = editModal === 'new' ? (selRulePackId || undefined) : undefined;
     const t = setTimeout(async () => {
-      const d = await window.dk.characters.derive({ attributes: editSpec.attributes, age: editSpec.age });
+      const d = await window.dk.characters.derive({ attributes: editSpec.attributes, age: editSpec.age }, undefined, rp);
       setEditDerived(d);
     }, 350);
     return () => clearTimeout(t);
-  }, [editSpec, editModal]);
+  }, [editSpec, editModal, selRulePackId]);
 
   async function rerollLuck() {
     if (!editSpec) return;
-    const d = await window.dk.characters.derive({ attributes: editSpec.attributes, age: editSpec.age });
+    const rp = editModal === 'new' ? (selRulePackId || undefined) : undefined;
+    const d = await window.dk.characters.derive({ attributes: editSpec.attributes, age: editSpec.age }, undefined, rp);
     setEditDerived(d);
     if (d['幸运'] !== undefined) setLuckOverride(d['幸运']); // 记住本次重掷值
   }
@@ -444,9 +449,9 @@ export function App() {
       .map((s) => s.replace(/^(?:[①-⑳]|\d+[.、)])\s*/, ''));
   }
 
-  // 车卡重骰预览（建团弹窗内，不落库；loaded=灌铅模式）
+  // 车卡重骰预览（建团弹窗内，不落库；loaded=灌铅模式；按所选规则包）
   async function rerollPreview() {
-    const p = await window.dk.characters.preview(`ui-${Date.now()}`, loaded);
+    const p = await window.dk.characters.preview(`ui-${Date.now()}`, loaded, selRulePackId || undefined);
     setPreview(p);
   }
 

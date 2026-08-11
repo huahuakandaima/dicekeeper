@@ -713,8 +713,10 @@ function summarizeChar(ch: ReturnType<typeof generateCharacter>) {
   };
 }
 // 建团前预览（不落库）：前端"重骰"每次换 seed；loaded=灌铅模式（§11.10）
-ipcMain.handle('characters:preview', (_e, seed?: string, loaded?: boolean) => {
-  const char = generateCharacter(pack, { seed: seed || `preview-${Date.now()}`, loaded: !!loaded });
+// rulePackId 可选：建团弹窗选了规则包时按所选规则包车卡（修复"随机车卡没按新规则包"）
+ipcMain.handle('characters:preview', (_e, seed?: string, loaded?: boolean, rulePackId?: string) => {
+  const rp = rulePackId ? loadRulePackFor(rulePackId) : pack;
+  const char = generateCharacter(rp, { seed: seed || `preview-${Date.now()}`, loaded: !!loaded });
   return summarizeChar(char);
 });
 // 当前上下文规则包：战役已开 → 战役的规则包；否则默认（"不能换规则包"修复：重骰/手填/技能面板随战役规则包）
@@ -734,9 +736,9 @@ ipcMain.handle('characters:reroll', () => {
   store.replaceCharacter(activeCampaignId, char);
   return summarizeChar(char);
 });
-// 手填车卡数据（§11.10 微调）：当前规则包字段 + 内置 CoC 说明
-ipcMain.handle('characters:fields', () => {
-  const rp = currentRulePack();
+// 手填车卡数据（§11.10 微调）：当前规则包字段 + 内置 CoC 说明（rulePackId 可选：建团弹窗按所选规则包）
+ipcMain.handle('characters:fields', (_e, rulePackId?: string) => {
+  const rp = rulePackId ? loadRulePackFor(rulePackId) : currentRulePack();
   return {
     attributes: rp.character_sheet.attributes.map((name) => ({ name, desc: COC_ATTRIBUTE_DESC[name] ?? GENERIC_DESC })),
     skills: rp.character_sheet.skills.map((s) => ({ name: s.name, base: s.base, desc: COC_SKILL_DESC[s.name] ?? GENERIC_DESC })),
@@ -745,8 +747,8 @@ ipcMain.handle('characters:fields', () => {
   };
 });
 // 手填后实时算衍生（不落库；幸运含随机，可重掷）
-ipcMain.handle('characters:derive', (_e, spec: { attributes: Record<string, number>; age?: number }, seed?: string) => {
-  const rp = currentRulePack();
+ipcMain.handle('characters:derive', (_e, spec: { attributes: Record<string, number>; age?: number }, seed?: string, rulePackId?: string) => {
+  const rp = rulePackId ? loadRulePackFor(rulePackId) : currentRulePack();
   const attributes = { ...(spec.attributes ?? {}) };
   for (const k of rp.character_sheet.attributes) {
     if (!Number.isInteger(attributes[k])) attributes[k] = Math.max(1, Math.min(99, Math.round(Number(attributes[k]) || 40)));
