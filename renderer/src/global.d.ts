@@ -64,7 +64,7 @@ declare global {
         testCheck: (req: { obj: Record<string, unknown>; skill: string; value: number; mode?: 'normal' | 'reward' | 'penalty' }) => Promise<CheckResult>;
         testDist: (req: { obj: Record<string, unknown>; skill: string; value: number; mode?: 'normal' | 'reward' | 'penalty'; trials?: number }) => Promise<{ trials: number; counts: Record<string, number> }>;
         testLore: (req: { obj: Record<string, unknown>; text: string; budget?: number }) => Promise<{ budget: number; used: number; hits: { id: string; activation: 'blue' | 'green' | 'yellow'; content: string; priority: number; cost: number }[] }>;
-        aiGenerate: (req: { type: 'rule' | 'scenario'; prompt: string; target: string }) => Promise<{ ok: boolean; target?: string; field?: string; draft?: unknown; yaml?: string; isWhole?: boolean; error?: string }>;
+        aiGenerate: (req: { type: 'rule' | 'scenario'; prompt: string; target: string; rulePackId?: string; prevDraft?: string }) => Promise<{ ok: boolean; target?: string; field?: string; draft?: unknown; yaml?: string; isWhole?: boolean; error?: string }>;
       };
       world: {
         updateFact: (id: string, patch: { fact?: string; importance?: string }) => Promise<{ id: string; fact: string; importance: string }>;

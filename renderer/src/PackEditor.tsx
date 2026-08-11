@@ -156,6 +156,17 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
   const [aiTarget, setAiTarget] = useState(type === 'scenario' ? 'pack' : 'rule-pack');
   const [aiBusy, setAiBusy] = useState(false);
   const [aiDraft, setAiDraft] = useState<{ target: string; field?: string; yaml: string } | null>(null); // 草稿（人工确认后应用）
+  // 按规则包生成剧本包：规则包列表选择（P3b 增强：注入所选规则包技能/属性体系）
+  const [rulePacks, setRulePacks] = useState<PackMeta[]>([]);
+  const [rulePackId, setRulePackId] = useState('');
+  // 对草稿的继续调整意见（解决"AI 生成大相径庭"：生成后可对话式迭代修改）
+  const [adjustPrompt, setAdjustPrompt] = useState('');
+  useEffect(() => {
+    window.dk.packs.list().then((p) => {
+      setRulePacks(p.rulePacks);
+      setRulePackId((cur) => cur || p.rulePacks[0]?.id || '');
+    }).catch(() => {});
+  }, []);
   // 试跑：成功率分布（§11.3）
   const [tcDist, setTcDist] = useState<{ trials: number; counts: Record<string, number> } | null>(null);
 
@@ -229,13 +240,34 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
   async function aiGenerate() {
     setAiBusy(true);
     setMsg(null);
-    const r = await window.dk.editor.aiGenerate({ type, prompt: aiPrompt.trim(), target: aiTarget });
+    const r = await window.dk.editor.aiGenerate({
+      type,
+      prompt: aiPrompt.trim(),
+      target: aiTarget,
+      rulePackId: aiTarget === 'scenario-from-rule' ? rulePackId : undefined,
+    });
     setAiBusy(false);
     if (r.ok) {
       setAiDraft({ target: r.target ?? aiTarget, field: r.field, yaml: r.yaml ?? '' });
-      setMsg({ kind: 'ok', text: r.isWhole ? '✓ AI 已生成整包草稿，请检查后「应用到表单」' : `✓ AI 已生成「${targetLabel(r.target ?? aiTarget)}」草稿` });
+      setMsg({ kind: 'ok', text: r.isWhole ? '✓ AI 已生成整包草稿，可继续「按意见修改」或直接应用到表单' : `✓ AI 已生成「${targetLabel(r.target ?? aiTarget)}」草稿` });
     } else {
       setMsg({ kind: 'err', text: r.error ?? 'AI 生成失败' });
+    }
+  }
+  // 迭代微调：对当前草稿提修改意见 → AI 在原草稿上修改（解决"生成大相径庭"：可多轮对话式调整）
+  async function aiAdjust() {
+    const text = adjustPrompt.trim();
+    if (!text || !aiDraft) return;
+    setAiBusy(true);
+    setMsg(null);
+    const r = await window.dk.editor.aiGenerate({ type, prompt: text, target: 'adjust', prevDraft: aiDraft.yaml });
+    setAiBusy(false);
+    if (r.ok) {
+      setAiDraft({ target: 'adjust', field: undefined, yaml: r.yaml ?? '' });
+      setAdjustPrompt('');
+      setMsg({ kind: 'ok', text: '✓ 已按你的意见修改草稿，检查后「应用到表单」' });
+    } else {
+      setMsg({ kind: 'err', text: r.error ?? '修改失败' });
     }
   }
   // 草稿 → 表单（整包替换 / 单点合并进对应字段）
@@ -269,7 +301,7 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
 
   const actLabel = (a: string) => (a === 'blue' ? '常驻' : a === 'green' ? '近期' : '历史');
   const targetLabel = (t: string) => ({
-    pack: '整包', 'rule-pack': '整包', npc: 'NPC 种子', location: '地点', world: '世界观', lore: '世界书条目', encounter: '遭遇模板', hooks: '开场白',
+    pack: '整包', 'rule-pack': '整包', 'scenario-from-rule': '整包（按规则包）', adjust: '整包', npc: 'NPC 种子', location: '地点', world: '世界观', lore: '世界书条目', encounter: '遭遇模板', hooks: '开场白',
   }[t] ?? t);
   const distTiers: [string, string][] = [['crit_fail', '大失败'], ['extreme', '极限'], ['hard', '困难'], ['normal', '普通'], ['fail', '失败']];
 
@@ -297,6 +329,7 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
                 {type === 'scenario' ? (
                   <>
                     <option value="pack">整包骨架</option>
+                    <option value="scenario-from-rule">整包（按规则包生成）</option>
                     <option value="npc">NPC 种子</option>
                     <option value="location">地点</option>
                     <option value="world">世界观</option>
@@ -310,9 +343,14 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
                   </>
                 )}
               </select>
+              {aiTarget === 'scenario-from-rule' && (
+                <select value={rulePackId} onChange={(e) => setRulePackId(e.target.value)} title="剧本将使用该规则包的属性/技能/检定体系">
+                  {rulePacks.map((p) => <option key={p.id} value={p.id}>{p.name}（v{p.version}）</option>)}
+                </select>
+              )}
               <input value={aiPrompt} placeholder={type === 'scenario' ? '输入主题，如「1920 年代伦敦的降神会连环失踪案」' : '输入规则体系需求，如「d100 系末世生存规则」'} onChange={(e) => setAiPrompt(e.target.value)} />
-              <button className="ghost" onClick={aiGenerate} disabled={aiBusy}>{aiBusy ? '生成中…' : '✨ 生成'}</button>
-              <span className="dim">需已配置 AI 服务；产出进草稿区，人工确认后应用（保存时校验）</span>
+              <button className="ghost" onClick={aiGenerate} disabled={aiBusy || (aiTarget === 'scenario-from-rule' && !rulePackId)}>{aiBusy ? '生成中…' : '✨ 生成'}</button>
+              <span className="dim">需已配置 AI 服务；「按规则包生成」= 剧本技能/检定贴合所选规则包；产出进草稿区，可继续按意见修改</span>
             </div>
             {aiDraft && (
               <div className="ai-draft">
@@ -322,6 +360,10 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
                     <button className="primary mini-btn" onClick={applyAiDraft}>✅ 应用到表单</button>
                     <button className="ghost mini-btn" onClick={() => setAiDraft(null)}>丢弃</button>
                   </span>
+                </div>
+                <div className="ai-adjust">
+                  <input value={adjustPrompt} onChange={(e) => setAdjustPrompt(e.target.value)} placeholder="不满意？对草稿提修改意见，如「把警长改成反派女店主，加一条雾潮线索，NPC 减到 4 个」" onKeyDown={(e) => e.key === 'Enter' && aiAdjust()} />
+                  <button className="ghost" onClick={aiAdjust} disabled={aiBusy || !adjustPrompt.trim()}>🔧 按意见修改</button>
                 </div>
                 <pre className="draft-yaml">{aiDraft.yaml.slice(0, 1200)}{aiDraft.yaml.length > 1200 ? '\n…' : ''}</pre>
               </div>

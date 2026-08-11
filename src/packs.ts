@@ -193,6 +193,30 @@ export function loadImportedRulePack(store: PackStore, id: string): RulePack | n
   }
 }
 
+// 规则包摘要（P3b 增强：AI「按规则包生成剧本包」用——把属性/技能/检定体系注入生成 prompt，
+// 让 AI 产出的 NPC/线索/世界书贴合该规则体系，而非自由发挥）
+export function summarizeRulePackForPrompt(rulePack: RulePack): string {
+  const cs = (rulePack.character_sheet ?? {}) as Record<string, unknown>;
+  const attributes = Array.isArray(cs.attributes) ? (cs.attributes as string[]).join('、') : '';
+  const derived = Array.isArray(cs.derived) ? (cs.derived as string[]).join('、') : '';
+  const skills = Array.isArray(cs.skills)
+    ? (cs.skills as { name?: string; base?: number; category?: string }[])
+        .map((s) => `${s.name ?? '?'}${typeof s.base === 'number' ? `(${s.base})` : ''}`)
+        .join('、')
+    : '';
+  const cr = (rulePack.check_rules ?? {}) as Record<string, unknown>;
+  const checkDesc = Object.entries(cr).map(([k, v]) => `${k}: ${String(v)}`).join('；');
+  return [
+    `规则包「${rulePack.name}」（id: ${rulePack.id}）`,
+    `骰子体系: ${rulePack.dice_schema ?? 'd100'}`,
+    `属性: ${attributes || '（未定义）'}`,
+    `衍生值: ${derived || '（未定义）'}`,
+    `技能: ${skills || '（未定义）'}`,
+    `检定规则: ${checkDesc || '（未定义）'}`,
+    '要求：剧本包必须贴合以上规则体系——NPC 秘密/地点线索/世界书里的行动建议与检定，使用该规则包的技能名与属性。',
+  ].join('\n');
+}
+
 // 从零新建包模板（P3b 增强：内容包 tab「＋ 新建」入口）：生成可过校验的最小合法骨架，用户再编辑
 // 规则包：CoC 风格 attributes/skills + check_rules（extreme/hard/normal/crit_fail，同 DSL 函数）
 // 剧本包：world/npc_seeds/locations/plot_threads/hooks/lore_entries 各给 1 条占位示例（校验要求非空）

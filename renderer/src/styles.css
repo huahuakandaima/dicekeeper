@@ -229,7 +229,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 /* AI 生成 */
 .ai-gen { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; border: 1px dashed var(--accent); border-radius: 8px; padding: 8px; background: #faf4ee; }
 .ai-gen input { flex: 1; min-width: 260px; padding: 7px; border: 1px solid var(--line); border-radius: 6px; }
+.ai-gen select { padding: 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; }
 .ai-gen .dim { width: 100%; }
+.ai-adjust { display: flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 6px; padding: 6px; background: #fff; }
+.ai-adjust input { flex: 1; padding: 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; }
 
 /* 试跑 */
 .test-box { display: flex; flex-direction: column; gap: 10px; }

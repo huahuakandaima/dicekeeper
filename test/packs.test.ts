@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => readFileSync(p, 'utf-8');
-import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
+import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
 import { loadScenarioPack } from '../src/scenario.ts';
 import { loadRulePack } from '../src/rules.ts';
 
@@ -266,4 +266,14 @@ test('normalizeGeneratedPack：规则包 AI 输出缺 id/version 被补全', () 
   // check_rules 缺的档位被模板补全（校验要求对象合法，且 DSL 表达式可解析）
   const cr = (norm as Record<string, unknown>).check_rules as Record<string, string>;
   assert.ok(cr.extreme && cr.hard && cr.crit_fail);
+});
+
+// 按规则包生成剧本包：规则包摘要提取（注入 AI prompt 用）——含技能/属性/检定体系
+test('summarizeRulePackForPrompt：摘要含规则包技能名与检定体系', () => {
+  const obj = parsePackObject('rule', read(join(HERE, '..', 'rules', 'coc7e.yaml'))) as Awaited<ReturnType<typeof loadRulePack>>;
+  const sum = summarizeRulePackForPrompt(obj);
+  assert.ok(sum.includes('克苏鲁的呼唤 7 版'));
+  assert.ok(sum.includes('侦查'), '摘要应含技能名');
+  assert.ok(sum.includes('检定规则'), '摘要应含检定体系');
+  assert.ok(sum.includes('d100'));
 });

@@ -36,7 +36,7 @@ import { OpenAiCompatibleProvider, MockProvider, type Provider } from '../src/ga
 import { runChat, extractNarrativePrefix } from '../src/gateway/chat.ts';
 import { buildSystemPrompt } from '../src/gateway/prompt.ts';
 import type { ToolContext } from '../src/gateway/tools.ts';
-import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, type PackMeta, type PackSummary } from '../src/packs.ts';
+import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, loadImportedRulePack, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, type PackMeta, type PackSummary } from '../src/packs.ts';
 import { PRESET_PERSONAS, renderPersona, validatePersona, findPersona, type Persona } from '../src/personas.ts';
 import { checkOllama, listOllamaModels, pullOllamaModel, downloadFile, recommendModel, OLLAMA_DOWNLOAD_URL, OLLAMA_OPENAI_URL } from '../src/ollama.ts';
 import { HWINFO_PS_SCRIPT, parseHwInfo } from '../src/hwinfo.ts';
@@ -1182,6 +1182,18 @@ const AI_TARGET_FIELD: Record<string, string> = {
   hooks: 'hooks',
   world: 'world',
 };
+// 规则包摘要注入：AI 按规则包生成剧本包时，把所选规则包的属性/技能/检定体系塞进 prompt
+function describeRulePackForPrompt(rulePackId: string): { ok: boolean; requiresId?: string; text?: string } {
+  let rulePack: RulePack | null = null;
+  try {
+    if (rulePackId === pack.id) rulePack = pack;
+    else rulePack = loadImportedRulePack(packStore, rulePackId);
+  } catch {
+    rulePack = null;
+  }
+  if (!rulePack) return { ok: false };
+  return { ok: true, requiresId: rulePack.id, text: summarizeRulePackForPrompt(rulePack) };
+}
 const AI_GEN_TARGET_SYSTEMS: Record<string, string> = {
   pack: `你是资深 TRPG 剧本设计者。根据主题生成一个 DiceKeeper 剧本包（只输出纯 YAML，不要任何解释）。
 结构必须完整：
@@ -1197,6 +1209,27 @@ encounters: 3-5 个 [{name, type: social|combat|exploration, skill, note}]
 hooks: 2-3 条叙事开场白
 lore_entries: 8-12 条 [{id, key_terms: [3-5 个关键词], activation: blue|green|yellow, content, priority}]
 格式约束：缩进两空格；list 项用 "key: value" 展开；多行文本用 | 块标量或单行；全中文内容。`,
+  'scenario-from-rule': `你是资深 TRPG 剧本设计者。根据【依赖规则包】与主题，生成一个 DiceKeeper 剧本包（只输出纯 YAML，不要任何解释）。
+剧本必须贴合依赖规则包的属性/技能/检定体系：NPC 秘密、地点线索、遭遇的 skill、世界书里的行动建议，一律使用该规则包的技能名与属性，不要自造技能。
+结构必须完整：
+id: 英文小写下划线
+name: 中文名称
+version: "1.0"
+requires: <依赖规则包的 id>
+world: {summary, cosmology, factions: [{name, stance}]}
+npc_seeds: 4-6 个 [{name, aliases, traits, secrets, relation_hint}]
+locations: 4-6 个 [{name, aliases, state, secrets}]
+plot_threads: 3-4 个 [{id, name, status: open, branches: [..]}]
+encounters: 3-5 个 [{name, type: social|combat|exploration, skill: <规则包技能名>, note}]
+hooks: 2-3 条叙事开场白
+lore_entries: 8-12 条 [{id, key_terms: [3-5 个关键词], activation: blue|green|yellow, content, priority}]
+格式约束：缩进两空格；全中文内容。`,
+  adjust: `你是资深 TRPG 剧本设计者。下面是用户已有的剧本/规则包 YAML 草稿，根据用户的修改意见修改它。
+要求：
+- 只输出修改后的完整纯 YAML，不要任何解释、不要 JSON 外壳、不要省略字段
+- 保持结构完整合法（id/name/version 等字段保留）
+- 修改意见没涉及的部分尽量保持原样
+- 新增内容用中文`,
   npc: `你是 TRPG 剧本设计者。根据给定设定生成 npc_seeds 列表（4-6 个 NPC，只输出 YAML，带顶层 npc_seeds:）。
 每项格式：
 npc_seeds:
@@ -1273,26 +1306,41 @@ rules_reference: 规则文本（裁决时注入，用 | 块标量）
 DSL 可用函数：floor/half/fifth/advantage/disadvantage/successes/min/max；骰子 d100/2d6 等；字段引用 SKILL 或属性名。
 格式约束：缩进两空格；list 项展开；全中文（技能/属性/职业名用中文）。`,
 };
-ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: string; target?: string }) => {
+ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: string; target?: string; rulePackId?: string; prevDraft?: string }) => {
   if (provider instanceof MockProvider) return { ok: false, error: '未配置 AI 服务：请先在「设置」填写接口地址与 API 密钥' };
   const type = req?.type === 'rule' ? 'rule' : 'scenario';
   const target = String(req?.target ?? 'pack');
   if (target === 'pack' && type === 'rule') return { ok: false, error: '规则包请用「整包生成」' };
+  // 按规则包生成剧本包：先解析所选规则包摘要，注入 prompt；requires 锁定该包
+  let ruleNote = '';
+  let requiresId: string | undefined;
+  if (target === 'scenario-from-rule') {
+    const d = describeRulePackForPrompt(String(req?.rulePackId ?? ''));
+    if (!d.ok) return { ok: false, error: '请先选择要依据的规则包（或该规则包已被删除）' };
+    ruleNote = d.text ?? '';
+    requiresId = d.requiresId;
+  }
   const system = AI_GEN_TARGET_SYSTEMS[target] ?? AI_GEN_TARGET_SYSTEMS.pack;
   try {
+    const userParts = [
+      ruleNote || null,
+      `主题/需求：${String(req?.prompt ?? '克苏鲁风格悬疑剧本')}`,
+      target === 'adjust' && req?.prevDraft ? `现有草稿：\n${req.prevDraft}` : null,
+    ].filter(Boolean).join('\n\n');
     const res = await provider.chat(
       [
         { role: 'system', content: system },
-        { role: 'user', content: `主题/需求：${String(req?.prompt ?? '克苏鲁风格悬疑剧本')}` },
+        { role: 'user', content: userParts },
       ],
       [],
       { temperature: 0.7, maxTokens: 3000 },
     );
     const yaml = extractYaml(res.content ?? '');
-    if (target === 'pack' || target === 'rule-pack') {
+    if (target === 'pack' || target === 'rule-pack' || target === 'scenario-from-rule' || target === 'adjust') {
       // 整包：AI 输出兜底规范化（缺 id/name/空字段用模板补全）→ 完整校验
       const raw = parseYaml(yaml) as Record<string, unknown>;
       const normalized = normalizeGeneratedPack(type, raw, String(req?.prompt ?? ''));
+      if (requiresId) normalized.requires = requiresId; // 按规则包生成：依赖锁定所选规则包
       const obj = parsePackObject(type, serializeYaml(normalized));
       return { ok: true, target, draft: obj, yaml: serializePackObject(type, obj), isWhole: true };
     }
