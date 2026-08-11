@@ -33,7 +33,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run dist:win
       - name: 计算递增版本号
         id: ver
         shell: bash
@@ -50,6 +49,9 @@ jobs:
           fi
           echo "ver=$VER" >> "$GITHUB_OUTPUT"
           echo "本次版本：$VER"
+      - name: 同步版本号到 package.json（产物文件名与版本一致）
+        run: npm version "${{ steps.ver.outputs.ver }}" --no-git-tag-version
+      - run: npm run dist:win
       - name: 发布 Release
         shell: bash
         env:
