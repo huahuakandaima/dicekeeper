@@ -47,6 +47,7 @@ export function App() {
   const [newName, setNewName] = useState('');
   const [charName, setCharName] = useState('无名调查员');
   const [preview, setPreview] = useState<CharPreview | null>(null); // 建团弹窗的车卡预览
+  const [previewBusy, setPreviewBusy] = useState(false); // 车卡生成中（确认按钮防连点）
   const [loaded, setLoaded] = useState(false);         // C14 灌铅模式（属性骰取优）
   const [pendingDel, setPendingDel] = useState<{ id: string; name: string } | null>(null); // 删除确认
   const [scenario, setScenario] = useState<{ id: string; name: string; hooks: string[] } | null>(null);
@@ -266,10 +267,11 @@ export function App() {
   }
 
   // 打开编辑：source='new' 用随机预览打底（建团弹窗，按所选规则包），'existing' 用当前角色卡（侧边栏）
-  async function openCharEdit(source: 'new' | 'existing') {
+  // fromOverride 可选：换规则包确认后直接以新预览为底（React state 异步，不能依赖 setPreview 后立即读 preview）
+  async function openCharEdit(source: 'new' | 'existing', fromOverride?: CharPreview | null) {
     const rp = source === 'new' ? (selRulePackId || undefined) : undefined;
     const f = await ensureCharFields(rp);
-    const from = source === 'new' ? preview : (char ? { ...char, name: char.name, skills: char.skills } : null);
+    const from = source === 'new' ? (fromOverride ?? preview) : (char ? { ...char, name: char.name, skills: char.skills } : null);
     const spec: CharSpec = {
       name: from?.name ?? charName ?? '无名调查员',
       gender: from?.gender ?? '男',
@@ -451,8 +453,24 @@ export function App() {
 
   // 车卡重骰预览（建团弹窗内，不落库；loaded=灌铅模式；按所选规则包）
   async function rerollPreview() {
-    const p = await window.dk.characters.preview(`ui-${Date.now()}`, loaded, selRulePackId || undefined);
-    setPreview(p);
+    setPreviewBusy(true);
+    try {
+      const p = await window.dk.characters.preview(`ui-${Date.now()}`, loaded, selRulePackId || undefined);
+      setPreview(p);
+    } finally {
+      setPreviewBusy(false);
+    }
+  }
+  // 换规则包确认（用户要求）：按所选规则包重新生成角色卡；手动编辑模式则同步刷新编辑表单
+  async function applyRulePack() {
+    setPreviewBusy(true);
+    try {
+      const p = await window.dk.characters.preview(`ui-${Date.now()}`, loaded, selRulePackId || undefined);
+      setPreview(p);
+      if (editMode) await openCharEdit('new', p);
+    } finally {
+      setPreviewBusy(false);
+    }
   }
 
   // Electron 不支持 window.prompt/confirm —— 用自绘弹窗
@@ -1024,6 +1042,11 @@ export function App() {
                   ))}
                 </select>
                 <span className="dim">决定属性/技能/检定规则；自建/导入的规则包在此选择（默认 CoC 7e）。剧本包依赖的规则包会被所选覆盖</span>
+                {selRulePackId && (
+                  <button className="ghost" onClick={() => void applyRulePack()} disabled={previewBusy}>
+                    {editMode ? '🔄 按规则包刷新编辑' : '🎲 按规则包生成角色卡'}
+                  </button>
+                )}
               </label>
             )}
             {scenarioPacks.length > 0 && (
@@ -1048,8 +1071,8 @@ export function App() {
             )}
             <div className="chargen-box">
               <div className="chargen-mode">
-                <button className={`ghost ${!editMode ? 'active' : ''}`} onClick={() => { setEditMode(false); setEditModal(null); void rerollPreview(); }}>🎲 随机</button>
-                <button className={`ghost ${editMode ? 'active' : ''}`} onClick={() => { setEditMode(true); openCharEdit('new'); }}>✏️ 手动编辑</button>
+                {!editMode && <button className="ghost" onClick={() => { setEditMode(true); void openCharEdit('new'); }}>✏️ 手动编辑</button>}
+                {editMode && <button className="ghost" onClick={() => { setEditMode(false); setEditModal(null); }}>← 返回随机</button>}
               </div>
               {!editMode ? (
                 <>
