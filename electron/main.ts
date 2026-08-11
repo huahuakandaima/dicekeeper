@@ -1335,25 +1335,33 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
     let raw: Record<string, unknown> | null = null;
     let rawText = '';
     let parseErr: Error | null = null;
+    let lastEmpty = false;
     for (let attempt = 0; attempt < 2; attempt++) {
       const res = await provider.chat(
         [
           { role: 'system', content: system },
-          { role: 'user', content: userParts + (attempt > 0 ? '\n\n（提示：上次输出无法解析，请严格两空格缩进输出纯 YAML（或 JSON 对象），不要任何解释文字、不要 markdown 代码块标记）' : '') },
+          { role: 'user', content: userParts + (attempt > 0 ? '\n\n（提示：上次输出为空或无法解析，请严格两空格缩进输出纯 YAML（或 JSON 对象），不要任何解释文字、不要 markdown 代码块标记）' : '') },
         ],
         [],
-        { temperature: 0.7, maxTokens: 5000 }, // 整包内容大，3000 易截断（截断=解析失败高频原因）
+        // 上次空内容 → 重试降 maxTokens（部分模型/中转对高 max_tokens 返回空）；格式错误 → 保持 5000 防截断
+        { temperature: 0.7, maxTokens: attempt === 0 ? 5000 : lastEmpty ? 2000 : 5000 },
       );
-      rawText = extractYaml(res.content ?? '');
+      const content = String(res.content ?? '');
+      lastEmpty = content.trim() === '';
+      rawText = extractYaml(content);
       raw = parseAiOutput(rawText);
       if (raw) {
         parseErr = null;
         break;
       }
-      parseErr = new Error(`输出无法解析为 YAML/JSON。AI 原文开头：${JSON.stringify(String(res.content ?? '').slice(0, 150))}…`);
+      parseErr = new Error(
+        lastEmpty
+          ? 'AI 服务返回了空内容（可能是模型对超长输出支持不佳、临时限流或接口异常），建议稍后重试'
+          : `输出无法解析为 YAML/JSON。AI 原文开头：${JSON.stringify(content.slice(0, 150))}…`,
+      );
     }
     if (parseErr || !raw) {
-      return { ok: false, error: `AI 输出的格式有问题（已自动重试 1 次仍失败）：${parseErr?.message ?? ''}。建议稍后点「生成」重试` };
+      return { ok: false, error: `AI 输出的格式有问题（已自动重试 1 次仍失败）：${parseErr?.message ?? ''}` };
     }
     if (target === 'pack' || target === 'rule-pack' || target === 'scenario-from-rule' || target === 'adjust') {
       // 整包：AI 输出兜底规范化（缺 id/name/空字段用模板补全）→ 完整校验
