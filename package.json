@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/electron/main.cjs",
   "scripts": {
-    "test": "node --experimental-sqlite --experimental-strip-types --test test/dice.test.ts test/dsl.test.ts test/rules.test.ts test/adjudicate.test.ts test/chargen.test.ts test/gateway.test.ts test/campaign.test.ts test/scenario.test.ts test/memory.test.ts test/packs.test.ts test/yaml-write.test.ts test/personas.test.ts test/sim.test.ts test/move.test.ts test/tension.test.ts test/ollama.test.ts test/net.test.ts test/serial-queue.test.ts",
+    "test": "node --experimental-sqlite --experimental-strip-types --test test/dice.test.ts test/dsl.test.ts test/rules.test.ts test/adjudicate.test.ts test/chargen.test.ts test/gateway.test.ts test/campaign.test.ts test/scenario.test.ts test/memory.test.ts test/packs.test.ts test/yaml-write.test.ts test/personas.test.ts test/sim.test.ts test/move.test.ts test/tension.test.ts test/ollama.test.ts test/net.test.ts test/serial-queue.test.ts test/ai-gen.test.ts",
     "smoke": "node --experimental-sqlite --experimental-strip-types src/run-play.ts",
     "build": "vite build -c vite.config.main.ts && vite build",
     "dist": "npm run build && electron-builder --config electron-builder.yml --publish never",

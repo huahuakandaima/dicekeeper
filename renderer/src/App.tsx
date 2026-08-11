@@ -455,20 +455,9 @@ export function App() {
       .map((s) => s.replace(/^(?:[①-⑳]|\d+[.、)])\s*/, ''));
   }
 
-  // 车卡重骰预览（建团弹窗内，不落库；loaded=灌铅模式；按所选规则包）
-  async function rerollPreview() {
-    setPreviewBusy(true);
-    try {
-      const p = await window.dk.characters.preview(`ui-${Date.now()}`, loaded, selRulePackId || undefined);
-      setPreview(p);
-    } catch (e) {
-      setNotice(`随机车卡失败：${(e as Error).message}`);
-    } finally {
-      setPreviewBusy(false);
-    }
-  }
-  // 换规则包确认（用户要求）：按所选规则包重新生成角色卡；手动编辑模式则同步刷新编辑表单
-  async function applyRulePack() {
+  // 车卡预览（建团弹窗内，不落库；loaded=灌铅模式；按所选规则包）。
+  // rerollPreview 与 applyRulePack 原为两份近乎复制（code-review 去重）——合并：editMode 时同步刷新编辑表单
+  async function regenPreview(label: string) {
     setPreviewBusy(true);
     try {
       const p = await window.dk.characters.preview(`ui-${Date.now()}`, loaded, selRulePackId || undefined);
@@ -476,11 +465,13 @@ export function App() {
       if (editMode) await openCharEdit('new', p);
     } catch (e) {
       // 静默失败曾让用户误判"还是默认规则"——必须报错可见（如规则包缺 chargen 段）
-      setNotice(`按规则包生成失败：${(e as Error).message}`);
+      setNotice(`${label}失败：${(e as Error).message}`);
     } finally {
       setPreviewBusy(false);
     }
   }
+  const rerollPreview = () => regenPreview('随机车卡');
+  const applyRulePack = () => regenPreview('按规则包生成');
   // 剧本包-规则包联动（用户要求：剧情包只能根据规则包选择）：选/换规则包时自动切到第一个配套剧本包
   function handleRulePackChange(id: string) {
     setSelRulePackId(id);

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { parseYaml } from '../../src/rules.ts';
 import { serializeYaml } from '../../src/yaml-write.ts';
+import { AI_TARGETS, SCENARIO_TARGET_ORDER } from '../../src/ai-gen.ts';
 import { DRAG_GUARD } from './drag-guard';
 import type { EditorOpenResult, PackMeta, CheckResult } from './global.d.ts';
 
@@ -320,9 +321,8 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
   }
 
   const actLabel = (a: string) => (a === 'blue' ? '常驻' : a === 'green' ? '近期' : '历史');
-  const targetLabel = (t: string) => ({
-    pack: '整包', 'rule-pack': '整包', 'scenario-from-rule': '整包（按规则包）', adjust: '整包', npc: 'NPC 种子', location: '地点', world: '世界观', lore: '世界书条目', encounter: '遭遇模板', hooks: '开场白',
-  }[t] ?? t);
+  // AI 目标标签来自 src/ai-gen.ts 单表（曾本地硬编码映射，与 main.ts 四处平行——新增 target 漏改会不一致）
+  const targetLabel = (t: string) => AI_TARGETS[t as keyof typeof AI_TARGETS]?.label ?? t;
   const distTiers: [string, string][] = [['crit_fail', '大失败'], ['extreme', '极限'], ['hard', '困难'], ['normal', '普通'], ['fail', '失败']];
 
   return (
@@ -347,16 +347,10 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
               <span className="dim">✨ AI 生成：</span>
               <select value={aiTarget} onChange={(e) => setAiTarget(e.target.value)}>
                 {type === 'scenario' ? (
-                  <>
-                    <option value="pack">整包骨架</option>
-                    <option value="scenario-from-rule">整包（按规则包生成）</option>
-                    <option value="npc">NPC 种子</option>
-                    <option value="location">地点</option>
-                    <option value="world">世界观</option>
-                    <option value="lore">世界书条目</option>
-                    <option value="encounter">遭遇模板</option>
-                    <option value="hooks">开场白</option>
-                  </>
+                  // 目标列表来自 src/ai-gen.ts 单表（SCENARIO_TARGET_ORDER + label），新增目标一处维护
+                  SCENARIO_TARGET_ORDER.map((t) => (
+                    <option key={t} value={t}>{AI_TARGETS[t].label}</option>
+                  ))
                 ) : (
                   <>
                     <option value="rule-pack">整包骨架</option>

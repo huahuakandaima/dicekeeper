@@ -37,6 +37,7 @@ import { runChat, extractNarrativePrefix } from '../src/gateway/chat.ts';
 import { buildSystemPrompt } from '../src/gateway/prompt.ts';
 import type { ToolContext } from '../src/gateway/tools.ts';
 import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, loadImportedRulePack, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, parseAiOutput, genPackId, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, ensureChargen, scenarioRuleMatch, type PackMeta, type PackSummary } from '../src/packs.ts';
+import { AI_TARGETS, isWholeTarget, type AiTarget } from '../src/ai-gen.ts';
 import { SerialQueue } from '../src/serial-queue.ts';
 import { defaultPersonaText } from '../src/personas.ts';
 import { PRESET_PERSONAS, renderPersona, validatePersona, findPersona, type Persona } from '../src/personas.ts';
@@ -1236,7 +1237,7 @@ function extractYaml(text: string): string {
   const blocks = [...text.matchAll(/```(?:yaml|yml|json)?\s*([\s\S]*?)```/g)].map((m) => m[1]);
   if (blocks.length > 0) return blocks.reduce((a, b) => (b.length > a.length ? b : a));
   // 无代码块：找 YAML 顶层字段起点（id 优先，单点生成找具体字段）
-  for (const key of ['id:', 'npc_seeds:', 'locations:', 'world:', 'lore_entries:', 'encounters:', 'hooks:', 'character_sheet:', 'check_rules:']) {
+  for (const key of ['id:', 'npc_seeds:', 'locations:', 'world:', 'lore_entries:', 'encounters:', 'hooks:', 'plot_threads:', 'tables:', 'character_sheet:', 'check_rules:']) {
     const i = text.indexOf(key);
     if (i >= 0) return text.slice(i);
   }
@@ -1245,14 +1246,7 @@ function extractYaml(text: string): string {
   if (b >= 0) return text.slice(b);
   return text;
 }
-const AI_TARGET_FIELD: Record<string, string> = {
-  npc: 'npc_seeds',
-  location: 'locations',
-  lore: 'lore_entries',
-  encounter: 'encounters',
-  hooks: 'hooks',
-  world: 'world',
-};
+// AI 生成目标单表见 src/ai-gen.ts（AI_TARGETS：label/system/field/type 一处维护）
 // 规则包摘要注入：AI 按规则包生成剧本包时，把所选规则包的属性/技能/检定体系塞进 prompt
 function describeRulePackForPrompt(rulePackId: string): { ok: boolean; requiresId?: string; text?: string } {
   let rulePack: RulePack | null = null;
@@ -1265,121 +1259,7 @@ function describeRulePackForPrompt(rulePackId: string): { ok: boolean; requiresI
   if (!rulePack) return { ok: false };
   return { ok: true, requiresId: rulePack.id, text: summarizeRulePackForPrompt(rulePack) };
 }
-const AI_GEN_TARGET_SYSTEMS: Record<string, string> = {
-  pack: `你是资深 TRPG 剧本设计者。根据主题生成一个 DiceKeeper 剧本包（只输出纯 YAML，不要任何解释）。
-结构必须完整：
-id: 英文小写下划线
-name: 中文名称
-version: "1.0"
-requires: coc7e
-world: {summary, cosmology, factions: [{name, stance}]}
-npc_seeds: 4-6 个 [{name, aliases, traits, secrets, relation_hint}]
-locations: 4-6 个 [{name, aliases, state, secrets}]
-plot_threads: 3-4 个 [{id, name, status: open, branches: [..]}]
-encounters: 3-5 个 [{name, type: social|combat|exploration, skill, note}]
-hooks: 2-3 条叙事开场白
-lore_entries: 8-12 条 [{id, key_terms: [3-5 个关键词], activation: blue|green|yellow, content, priority}]
-格式约束：缩进两空格；list 项用 "key: value" 展开；多行文本用 | 块标量或单行；全中文内容。`,
-  'scenario-from-rule': `你是资深 TRPG 剧本设计者。根据【依赖规则包】与主题，生成一个 DiceKeeper 剧本包（只输出纯 YAML，不要任何解释）。
-剧本必须贴合依赖规则包的属性/技能/检定体系：NPC 秘密、地点线索、遭遇的 skill、世界书里的行动建议，一律使用该规则包的技能名与属性，不要自造技能。
-结构必须完整：
-id: 英文小写下划线
-name: 中文名称
-version: "1.0"
-requires: <依赖规则包的 id>
-world: {summary, cosmology, factions: [{name, stance}]}
-npc_seeds: 4-6 个 [{name, aliases, traits, secrets, relation_hint}]
-locations: 4-6 个 [{name, aliases, state, secrets}]
-plot_threads: 3-4 个 [{id, name, status: open, branches: [..]}]
-encounters: 3-5 个 [{name, type: social|combat|exploration, skill: <规则包技能名>, note}]
-hooks: 2-3 条叙事开场白
-lore_entries: 8-12 条 [{id, key_terms: [3-5 个关键词], activation: blue|green|yellow, content, priority}]
-格式约束：缩进两空格；全中文内容。`,
-  adjust: `你是资深 TRPG 剧本设计者。下面是用户已有的剧本/规则包 YAML 草稿，根据用户的修改意见修改它。
-要求：
-- 只输出修改后的完整纯 YAML，不要任何解释、不要 JSON 外壳、不要省略字段
-- 保持结构完整合法（id/name/version 等字段保留）
-- 修改意见没涉及的部分尽量保持原样
-- 新增内容用中文`,
-  npc: `你是 TRPG 剧本设计者。根据给定设定生成 npc_seeds 列表（4-6 个 NPC，只输出 YAML，带顶层 npc_seeds:）。
-每项格式：
-npc_seeds:
-  - name: 中文名
-    aliases: [别称1, 别称2]
-    traits: 性格与外貌（2-3 句）
-    secrets: 隐藏秘密（与主题相关）
-    relation_hint: 与主线/其他角色的关联
-格式约束：缩进两空格；全中文；不要输出解释文字。`,
-  location: `你是 TRPG 剧本设计者。根据给定设定生成 locations 列表（4-6 个地点，只输出 YAML，带顶层 locations:）。
-每项格式：
-locations:
-  - name: 地点名
-    aliases: [别称]
-    state: 当前状态
-    secrets: 隐藏的秘密/线索
-格式约束：缩进两空格；全中文；不要输出解释文字。`,
-  world: `你是 TRPG 剧本设计者。根据给定设定生成 world 世界观（只输出 YAML，带顶层 world:）。
-格式：
-world:
-  summary: 世界观总览（3-5 句，用 | 块标量）
-  cosmology: 宇宙观/神秘设定（2-4 句，用 | 块标量）
-  factions:
-    - name: 势力名
-      stance: 立场与行为描述
-格式约束：缩进两空格；全中文；不要输出解释文字。`,
-  lore: `你是 TRPG 剧本设计者。根据给定设定生成世界书条目 lore_entries（8-12 条，只输出 YAML，带顶层 lore_entries:）。
-每项格式：
-lore_entries:
-  - id: 英文小写id
-    key_terms: [触发关键词1, 关键词2, 关键词3]
-    activation: blue | green | yellow
-    content: 注入内容（2-3 句）
-    priority: 0-10 整数
-激活策略：blue=常驻注入（世界观核心）；green=关键词出现在近期对话时注入（NPC/地点资料）；yellow=关键词出现在整场历史时注入（罕见事件）。
-格式约束：缩进两空格；全中文；不要输出解释文字。`,
-  encounter: `你是 TRPG 剧本设计者。根据给定设定生成遭遇模板 encounters（3-5 个，只输出 YAML，带顶层 encounters:）。
-每项格式：
-encounters:
-  - name: 遭遇名
-    type: social | combat | exploration
-    skill: 建议检定技能
-    note: 遭遇要点
-格式约束：缩进两空格；全中文；不要输出解释文字。`,
-  hooks: `你是 TRPG 剧本设计者。根据给定设定生成叙事开场白 hooks（2-3 条，只输出 YAML，带顶层 hooks:）。
-格式：
-hooks:
-  - 第一条开场白（第一人称/第二人称混合，营造氛围并引导行动）
-格式约束：每条一句到两句话，全中文；不要输出解释文字。`,
-  'rule-pack': `你是 TRPG 规则设计者。根据需求生成一个 DiceKeeper 规则包（只输出纯 YAML，不要任何解释）。
-结构：
-id: 英文小写下划线
-name: 中文名称
-version: "1.0"
-dice_schema: d100 或 d20
-character_sheet:
-  attributes: [4-8 个中文属性名，禁止空数组、禁止省略]
-  derived: [衍生值1, ...]
-  skills:
-    - {name: 技能名, base: 初始值, category: 分类}
-    - {name: 技能名, base: 初始值, category: 分类, action: narrative}
-check_rules:
-  extreme: "DSL 表达式（如 d100 <= fifth(SKILL)）"
-  hard: "d100 <= half(SKILL)"
-  normal: "d100 <= SKILL"
-  crit_fail: "d100 >= 96"
-chargen:
-  attribute_methods:
-    - {name: 属性生成法, formula: "3d6*5", fields: [属性1, ...]}
-  derived_formulas:
-    衍生名: "公式（如 (SIZ+CON)/10）"
-  occupations:
-    - {name: 职业名, skills: [技能1, 技能2], points: "点数公式（如 EDU*2+INT*2）"}
-rules_reference: 规则文本（裁决时注入，用 | 块标量）
-skills 条目可带 action 声明按钮类型：check=检定（默认，d100 对比技能值）/ narrative=叙事行动（不掷骰，玩家点击作为行动发送，由主持人叙事推进）/ none=不显示按钮
-gm_title: 本规则下主持人/GM 的称谓（如 守密人/地下城主/城主/主持人），UI 与 AI 人格按此称呼
-DSL 可用函数：floor/half/fifth/advantage/disadvantage/successes/min/max；骰子 d100/2d6 等；字段引用 SKILL 或属性名。
-格式约束：缩进两空格；list 项展开；全中文（技能/属性/职业名用中文）。`,
-};
+
 ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: string; target?: string; rulePackId?: string; prevDraft?: string }) => {
   if (provider instanceof MockProvider) return { ok: false, error: '未配置 AI 服务：请先在「设置」填写接口地址与 API 密钥' };
   const type = req?.type === 'rule' ? 'rule' : 'scenario';
@@ -1394,7 +1274,7 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
     ruleNote = d.text ?? '';
     requiresId = d.requiresId;
   }
-  const system = AI_GEN_TARGET_SYSTEMS[target] ?? AI_GEN_TARGET_SYSTEMS.pack;
+  const system = AI_TARGETS[target as AiTarget]?.system ?? AI_TARGETS.pack.system;
   try {
     const userParts = [
       ruleNote || null,
@@ -1434,7 +1314,7 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
     if (parseErr || !raw) {
       return { ok: false, error: `AI 输出的格式有问题（已自动重试 1 次仍失败）：${parseErr?.message ?? ''}` };
     }
-    if (target === 'pack' || target === 'rule-pack' || target === 'scenario-from-rule' || target === 'adjust') {
+    if (isWholeTarget(target)) {
       // 整包：AI 输出兜底规范化（缺 id/name/空字段用模板补全）→ 完整校验
       const normalized = normalizeGeneratedPack(type, raw, String(req?.prompt ?? ''));
       if (requiresId) normalized.requires = requiresId; // 按规则包生成：依赖锁定所选规则包
@@ -1449,7 +1329,7 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
       return { ok: true, target, draft: obj, yaml: serializePackObject(type, obj), isWhole: true };
     }
     // 单点：从智能解析结果提取该字段（AI 生成部分，保存时统一校验）
-    const field = AI_TARGET_FIELD[target];
+    const field = AI_TARGETS[target as AiTarget]?.field;
     if (!field || !(field in raw)) {
       return { ok: false, error: `AI 输出缺少 ${field} 字段，请重试` };
     }
