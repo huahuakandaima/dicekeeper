@@ -36,7 +36,7 @@ import { OpenAiCompatibleProvider, MockProvider, type Provider } from '../src/ga
 import { runChat, extractNarrativePrefix } from '../src/gateway/chat.ts';
 import { buildSystemPrompt } from '../src/gateway/prompt.ts';
 import type { ToolContext } from '../src/gateway/tools.ts';
-import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, type PackMeta, type PackSummary } from '../src/packs.ts';
+import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, type PackMeta, type PackSummary } from '../src/packs.ts';
 import { PRESET_PERSONAS, renderPersona, validatePersona, findPersona, type Persona } from '../src/personas.ts';
 import { checkOllama, listOllamaModels, pullOllamaModel, downloadFile, recommendModel, OLLAMA_DOWNLOAD_URL, OLLAMA_OPENAI_URL } from '../src/ollama.ts';
 import { HWINFO_PS_SCRIPT, parseHwInfo } from '../src/hwinfo.ts';
@@ -1290,8 +1290,10 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
     );
     const yaml = extractYaml(res.content ?? '');
     if (target === 'pack' || target === 'rule-pack') {
-      // 整包：完整校验
-      const obj = parsePackObject(type, yaml);
+      // 整包：AI 输出兜底规范化（缺 id/name/空字段用模板补全）→ 完整校验
+      const raw = parseYaml(yaml) as Record<string, unknown>;
+      const normalized = normalizeGeneratedPack(type, raw, String(req?.prompt ?? ''));
+      const obj = parsePackObject(type, serializeYaml(normalized));
       return { ok: true, target, draft: obj, yaml: serializePackObject(type, obj), isWhole: true };
     }
     // 单点：带顶层 key 解析后提取该字段（AI 生成部分，保存时统一校验）
@@ -1302,7 +1304,11 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
     }
     return { ok: true, target, field, draft: parsed[field], yaml };
   } catch (e) {
-    return { ok: false, error: `AI 生成失败: ${(e as Error).message}` };
+    // AI 输出问题给可操作提示（不是纯技术报错）
+    const msg = (e as Error).message;
+    return { ok: false, error: msg.includes('缺少') || msg.includes('必须') || msg.includes('表达式非法')
+      ? `AI 生成的骨架不完整：${msg}。可补全细节后重试，或改用「单点生成」逐块生成`
+      : `AI 生成失败: ${msg}` };
   }
 });
 

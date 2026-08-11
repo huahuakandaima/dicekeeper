@@ -227,6 +227,66 @@ export function buildNewPackTemplate(type: PackType, name: string, id: string): 
   } as ScenarioPack;
 }
 
+// AI 生成整包兜底（修复"AI 生成失败: 剧本包缺少 id"等）：AI 输出不可控，缺字段/空数组/空串
+// 用合法模板占位补全，保证生成的骨架一定能过完整校验；AI 给到的内容优先保留。
+export function normalizeGeneratedPack(type: PackType, raw: Record<string, unknown>, prompt: string): Record<string, unknown> {
+  const tpl = buildNewPackTemplate(type, '未命名', '') as Record<string, unknown>;
+  const merged: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(tpl)) {
+    merged[k] = v; // 先铺模板
+  }
+  for (const [k, v] of Object.entries(raw)) {
+    if (v === undefined || v === null) continue;
+    // check_rules：AI 给的档位保留，模板缺的档位补全（合并而非覆盖）
+    if (k === 'check_rules' && typeof v === 'object') {
+      merged[k] = { ...((merged.check_rules ?? {}) as object), ...(v as object) };
+      continue;
+    }
+    // character_sheet：合并（attributes 空数组 → 模板补）
+    if (k === 'character_sheet' && typeof v === 'object') {
+      const tplCs = (merged.character_sheet ?? {}) as Record<string, unknown>;
+      const aiCs = v as Record<string, unknown>;
+      const mergedCs: Record<string, unknown> = { ...tplCs, ...aiCs };
+      if (Array.isArray(aiCs.attributes) && (aiCs.attributes as unknown[]).length === 0) mergedCs.attributes = tplCs.attributes;
+      merged[k] = mergedCs;
+      continue;
+    }
+    if (Array.isArray(v)) {
+      if (v.length > 0) merged[k] = v; // AI 空数组不覆盖模板（校验要求非空）
+      continue;
+    }
+    if (typeof v === 'object' && Object.keys(v as object).length === 0) continue;
+    if (typeof v === 'string' && v.trim() === '') continue;
+    merged[k] = v;
+  }
+  // 必填标量兜底：id / name 只认 AI 输出（模板占位不顶替），缺失时生成/从需求提取；version / requires 兜底
+  merged.id = typeof raw.id === 'string' && raw.id.trim() ? raw.id : `${type === 'rule' ? 'rule' : 'scen'}-gen-${Date.now().toString(36)}`;
+  merged.name = typeof raw.name === 'string' && raw.name.trim() ? raw.name : (prompt.trim().slice(0, 20) || (type === 'rule' ? '未命名规则' : '未命名剧本'));
+  if (raw.version === undefined || raw.version === null || raw.version === '') merged.version = '1.0';
+  if (type === 'scenario' && (typeof raw.requires !== 'string' || !raw.requires.trim())) merged.requires = 'coc7e';
+  // world.summary 非空兜底（嵌套对象空 summary 不会走顶层空值过滤）
+  if (type === 'scenario') {
+    const tplWorld = (tpl.world ?? {}) as Record<string, unknown>;
+    const aiWorld = (raw.world ?? {}) as Record<string, unknown>;
+    const summary = typeof aiWorld.summary === 'string' && aiWorld.summary.trim() ? aiWorld.summary : tplWorld.summary;
+    merged.world = { ...tplWorld, ...aiWorld, summary };
+  }
+  // 条目级兜底：AI 生成的条目缺必填字段 → 补占位（AI 有则保留）
+  if (type === 'scenario') {
+    merged.npc_seeds = ((merged.npc_seeds ?? []) as Record<string, unknown>[]).map((n) => ({ traits: '（AI 未生成性格，请补充）', ...n, name: typeof n.name === 'string' && n.name.trim() ? n.name : '未命名 NPC' }));
+    merged.locations = ((merged.locations ?? []) as Record<string, unknown>[]).map((l, i) => ({ ...l, name: typeof l.name === 'string' && l.name.trim() ? l.name : `地点${i + 1}` }));
+    merged.plot_threads = ((merged.plot_threads ?? []) as Record<string, unknown>[]).map((t, i) => ({ ...t, id: typeof t.id === 'string' && t.id.trim() ? t.id : `t${i + 1}`, name: typeof t.name === 'string' && t.name.trim() ? t.name : '未命名线索' }));
+    merged.lore_entries = ((merged.lore_entries ?? []) as Record<string, unknown>[]).map((e, i) => ({
+      ...e,
+      id: typeof e.id === 'string' && e.id.trim() ? e.id : `l${i + 1}`,
+      key_terms: Array.isArray(e.key_terms) && (e.key_terms as unknown[]).length > 0 ? (e.key_terms as unknown[]) : ['未分类'],
+      activation: typeof e.activation === 'string' && ['blue', 'green', 'yellow'].includes(e.activation) ? e.activation : 'blue',
+      content: typeof e.content === 'string' && e.content.trim() ? e.content : '（AI 未生成内容，请补充）',
+    }));
+  }
+  return merged;
+}
+
 // —— P3b 内容编辑器：对象解析/序列化/保存/试跑 ——
 
 // 解析包文本（.dk 头或纯 YAML）为对象并校验

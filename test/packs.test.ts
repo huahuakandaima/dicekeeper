@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => readFileSync(p, 'utf-8');
-import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
+import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
 import { loadScenarioPack } from '../src/scenario.ts';
 import { loadRulePack } from '../src/rules.ts';
 
@@ -229,4 +229,41 @@ test('buildNewPackTemplate：id 唯一性语义（时间戳前缀）', () => {
   const b = buildNewPackTemplate('scenario', '乙', 'scen-def');
   assert.notEqual((a as Record<string, unknown>).id, (b as Record<string, unknown>).id);
   assert.equal((a as Record<string, unknown>).name, '甲');
+});
+
+// AI 生成整包兜底：AI 输出缺 id/name/空数组 → 规范化后必须能过完整校验（修复"剧本包缺少 id"）
+test('normalizeGeneratedPack：AI 缺 id/name 的剧本输出被补全并通过校验', () => {
+  const ai = {
+    world: { summary: '雾都 1925，连环失踪案。' },
+    npc_seeds: [{ name: '警长' }], // 缺 traits
+    locations: [],
+    plot_threads: [{ name: '线索一' }], // 缺 id
+    hooks: ['开场'],
+    lore_entries: [{ key_terms: ['雾'], content: '雾里有东西。' }], // 缺 id/activation
+  };
+  const norm = normalizeGeneratedPack('scenario', ai, '雾都失踪案');
+  assert.ok(typeof norm.id === 'string' && norm.id.startsWith('scen-'));
+  assert.equal(norm.name, '雾都失踪案');
+  const body = serializePackObject('scenario', norm as never);
+  const res = validatePackContent(dkContent('scenario', body), ['coc7e']);
+  assert.equal(res.ok, true, res.error ?? '');
+  // AI 内容保留：世界书内容不被覆盖
+  const obj = parsePackObject('scenario', body) as Record<string, unknown>;
+  assert.equal((obj.lore_entries as { content: string }[])[0].content, '雾里有东西。');
+  // 条目缺字段已补占位
+  assert.ok((obj.npc_seeds as { traits: string }[])[0].traits.length > 0);
+  assert.equal((obj.plot_threads as { id: string }[])[0].id, 't1');
+});
+
+test('normalizeGeneratedPack：规则包 AI 输出缺 id/version 被补全', () => {
+  const ai = { name: '末世生存', dice_schema: 'd100', character_sheet: { attributes: ['力量', '敏捷'], skills: [{ name: '枪械', base: 40, category: '战斗' }] }, check_rules: { normal: 'd100 <= SKILL' } };
+  const norm = normalizeGeneratedPack('rule', ai, '末世生存规则');
+  assert.ok(typeof norm.id === 'string' && norm.id.startsWith('rule-'));
+  assert.equal(norm.version, '1.0');
+  const body = serializePackObject('rule', norm as never);
+  const res = validatePackContent(dkContent('rule', body), []);
+  assert.equal(res.ok, true, res.error ?? '');
+  // check_rules 缺的档位被模板补全（校验要求对象合法，且 DSL 表达式可解析）
+  const cr = (norm as Record<string, unknown>).check_rules as Record<string, string>;
+  assert.ok(cr.extreme && cr.hard && cr.crit_fail);
 });
