@@ -69,6 +69,22 @@ const pack = loadRulePack(RULES_PATH);
 const scenario = loadScenarioPack(SCENARIO_PATH);
 const packStore = new PackStore(PACKS_DIR);
 
+// 规则包注册表：按战役 rulePackId 加载（内置 coc7e 或 userData/packs/rule 导入包；找不到回退默认）
+// —— "不能换规则包"修复核心：运行时判定/车卡/prompt 全部改走此函数，不再硬编码 coc7e
+const rulePackCache = new Map<string, RulePack>();
+function loadRulePackFor(rulePackId: string | null | undefined): RulePack {
+  const id = rulePackId || pack.id;
+  if (id === pack.id) return pack;
+  const hit = rulePackCache.get(id);
+  if (hit) return hit;
+  const imported = loadImportedRulePack(packStore, id);
+  if (imported) {
+    rulePackCache.set(id, imported);
+    return imported;
+  }
+  return pack; // 找不到（包被删）回退默认
+}
+
 // 剧本包注册表：内置 + 导入（建团可选，P3a）
 function loadScenarioById(id: string): ScenarioPack | null {
   if (id === scenario.id) return scenario;
@@ -633,24 +649,31 @@ ipcMain.handle('campaign:tokens', (_e, id?: string) => {
   const msgChars = windowMsgs.reduce((s, m) => s + (m.content?.length ?? 0) + (m.dice_results_json?.length ?? 0), 0);
   const storedChars = msgs.reduce((s, m) => s + (m.content?.length ?? 0) + (m.dice_results_json?.length ?? 0), 0);
   // 系统提示基础段估算：规则参考 + 角色卡 + 人格 + 红线（不含记忆注入，近似）
-  const sysChars = (pack.rules_reference ?? '').slice(0, 1500).length
+  const sysChars = (currentRulePack().rules_reference ?? '').slice(0, 1500).length
     + (char ? JSON.stringify(char.attributes).length + JSON.stringify(char.skills).slice(0, 600).length : 0)
     + resolvePersona(cid).length
     + 400; // 红线 + 输出格式等固定段
   return { ok: true, campaignId: cid, messages: msgChars, system: sysChars, total: msgChars + sysChars, msgCount: windowMsgs.length, stored: storedChars };
 });
-ipcMain.handle('campaign:create', (_e, opts: { name: string; seed?: string; charName?: string; charSpec?: CharacterSpec; derivedOverrides?: Record<string, number>; scenarioPackId?: string; loaded?: boolean; personaId?: string }) => {
+ipcMain.handle('campaign:create', (_e, opts: { name: string; seed?: string; charName?: string; charSpec?: CharacterSpec; derivedOverrides?: Record<string, number>; scenarioPackId?: string; loaded?: boolean; personaId?: string; rulePackId?: string }) => {
+  // 规则包可选（"不能换规则包"修复）：rulePackId 指定 → 用该规则包车卡与判定；否则剧本包 requires → 否则默认 coc7e
+  let activePack = pack;
+  if (opts.rulePackId) {
+    const exists = opts.rulePackId === pack.id || !!loadImportedRulePack(packStore, opts.rulePackId);
+    if (!exists) throw new Error(`规则包不存在: ${opts.rulePackId}`);
+    activePack = loadRulePackFor(opts.rulePackId);
+  }
   let char: ReturnType<typeof generateCharacter>;
   if (opts.charSpec) {
     // 手动车卡（§11.10 微调）：校验 + 衍生自动算（overrides 保持 UI 重掷的幸运值）
-    char = buildCharacter(pack, { ...opts.charSpec, name: opts.charName?.trim() || opts.charSpec.name || '无名调查员' }, opts.seed ?? `ui-${Date.now()}`, opts.derivedOverrides);
+    char = buildCharacter(activePack, { ...opts.charSpec, name: opts.charName?.trim() || opts.charSpec.name || '无名调查员' }, opts.seed ?? `ui-${Date.now()}`, opts.derivedOverrides);
   } else {
-    char = generateCharacter(pack, { seed: opts.seed ?? `ui-${Date.now()}`, name: opts.charName?.trim() || '无名调查员', loaded: opts.loaded });
+    char = generateCharacter(activePack, { seed: opts.seed ?? `ui-${Date.now()}`, name: opts.charName?.trim() || '无名调查员', loaded: opts.loaded });
   }
   // 剧本包可选（P3a：内置 + 导入包）
   const sc = opts.scenarioPackId ? loadScenarioById(opts.scenarioPackId) : scenario;
   if (!sc) throw new Error(`剧本包不存在: ${opts.scenarioPackId}`);
-  const c = store.createCampaign({ name: opts.name, rulePackId: pack.id, scenarioPackId: sc.id, characters: [char], personaId: opts.personaId });
+  const c = store.createCampaign({ name: opts.name, rulePackId: activePack.id, scenarioPackId: sc.id, characters: [char], personaId: opts.personaId });
   // 剧本包初始化：世界设定 + NPC/地点/线索种子 + 世界书条目落库（§3.5）
   store.initScenarioWorld(c.id, sc);
   // 玩家位置实体（在场对话/@ 候选依据）：初始在剧本包第一个地点
@@ -694,34 +717,46 @@ ipcMain.handle('characters:preview', (_e, seed?: string, loaded?: boolean) => {
   const char = generateCharacter(pack, { seed: seed || `preview-${Date.now()}`, loaded: !!loaded });
   return summarizeChar(char);
 });
+// 当前上下文规则包：战役已开 → 战役的规则包；否则默认（"不能换规则包"修复：重骰/手填/技能面板随战役规则包）
+function currentRulePack(): RulePack {
+  if (activeCampaignId) {
+    const c = store.loadCampaign(activeCampaignId);
+    return loadRulePackFor(c.rulePackId);
+  }
+  return pack;
+}
 // 替换当前战役的 PC（保留名字，重骰其余）：侧边栏"重骰角色"
 ipcMain.handle('characters:reroll', () => {
   if (!activeCampaignId) throw new Error('未打开战役');
   const campaign = store.loadCampaign(activeCampaignId);
   const old = campaign.characters[0];
-  const char = generateCharacter(pack, { seed: `reroll-${Date.now()}`, name: old?.name ?? '无名调查员' });
+  const char = generateCharacter(currentRulePack(), { seed: `reroll-${Date.now()}`, name: old?.name ?? '无名调查员' });
   store.replaceCharacter(activeCampaignId, char);
   return summarizeChar(char);
 });
-// 手填车卡数据（§11.10 微调）：规则包字段 + 内置 CoC 说明
-ipcMain.handle('characters:fields', () => ({
-  attributes: pack.character_sheet.attributes.map((name) => ({ name, desc: COC_ATTRIBUTE_DESC[name] ?? GENERIC_DESC })),
-  skills: pack.character_sheet.skills.map((s) => ({ name: s.name, base: s.base, desc: COC_SKILL_DESC[s.name] ?? GENERIC_DESC })),
-  derived: pack.character_sheet.derived.map((name) => ({ name, desc: COC_DERIVED_DESC[name] ?? GENERIC_DESC })),
-  occupations: (pack.chargen?.occupations ?? []).map((o) => o.name),
-}));
+// 手填车卡数据（§11.10 微调）：当前规则包字段 + 内置 CoC 说明
+ipcMain.handle('characters:fields', () => {
+  const rp = currentRulePack();
+  return {
+    attributes: rp.character_sheet.attributes.map((name) => ({ name, desc: COC_ATTRIBUTE_DESC[name] ?? GENERIC_DESC })),
+    skills: rp.character_sheet.skills.map((s) => ({ name: s.name, base: s.base, desc: COC_SKILL_DESC[s.name] ?? GENERIC_DESC })),
+    derived: rp.character_sheet.derived.map((name) => ({ name, desc: COC_DERIVED_DESC[name] ?? GENERIC_DESC })),
+    occupations: (rp.chargen?.occupations ?? []).map((o) => o.name),
+  };
+});
 // 手填后实时算衍生（不落库；幸运含随机，可重掷）
 ipcMain.handle('characters:derive', (_e, spec: { attributes: Record<string, number>; age?: number }, seed?: string) => {
+  const rp = currentRulePack();
   const attributes = { ...(spec.attributes ?? {}) };
-  for (const k of pack.character_sheet.attributes) {
+  for (const k of rp.character_sheet.attributes) {
     if (!Number.isInteger(attributes[k])) attributes[k] = Math.max(1, Math.min(99, Math.round(Number(attributes[k]) || 40)));
   }
-  return computeDerived(pack, attributes, seed ?? `derive-${Date.now()}`, spec.age ?? 25);
+  return computeDerived(rp, attributes, seed ?? `derive-${Date.now()}`, spec.age ?? 25);
 });
 // 保存手动编辑的角色卡（校验 + 衍生 + 替换当前战役 PC；overrides 保持 UI 重掷的幸运值）
 ipcMain.handle('characters:update', (_e, spec: CharacterSpec, derivedOverrides?: Record<string, number>) => {
   if (!activeCampaignId) throw new Error('未打开战役');
-  const char = buildCharacter(pack, spec, `edit-${Date.now()}`, derivedOverrides);
+  const char = buildCharacter(currentRulePack(), spec, `edit-${Date.now()}`, derivedOverrides);
   store.replaceCharacter(activeCampaignId, char);
   return summarizeChar(char);
 });
@@ -847,6 +882,8 @@ async function runPlayerTurn(action: string, aiAction?: string, source?: string)
   const campaign = store.loadCampaign(activeCampaignId);
   const char = campaign.characters[0];
   const world = World.loadFromDb(store.db, activeCampaignId);
+  // 按战役规则包判定（"不能换规则包"修复：不再硬编码 coc7e）
+  const activePack = loadRulePackFor(campaign.rulePackId);
   // L1 上下文窗口截断（§3.3：AI 每轮只带最近 30 轮完整对话，更早历史由 L2 摘要压缩；
   // 消息表全量保留，恢复历史/审计不受影响；每次中途摘要（40 条触发）已覆盖被截断的最旧部分）
   const history = toChatMessages(trimHistoryToWindow(store.getMessages(activeCampaignId, activeSessionId)));
@@ -908,7 +945,7 @@ async function runPlayerTurn(action: string, aiAction?: string, source?: string)
     }
   }
 
-  const toolCtx: ToolContext = { pack, character: char, world, seed: `chat-${Date.now()}`, extraFields: char ? characterFields(char) : {} };
+  const toolCtx: ToolContext = { pack: activePack, character: char, world, seed: `chat-${Date.now()}`, extraFields: char ? characterFields(char) : {} };
   // 张力仪表（§11.7 戏剧引擎）：本地数值 + 玩家滑杆 → prompt 红线注入
   // 最近玩家检定的失败次数（本地审计统计，不依赖 AI；reason 形如 "侦查（普通成功）"）
   const recentChecks = world.diceLog.filter((d) => d.requested_by === 'player').slice(-8);
@@ -929,7 +966,7 @@ async function runPlayerTurn(action: string, aiAction?: string, source?: string)
     const out = await runChat(`${aiAction ?? action}${moveNote}`, history, {
       provider,
       toolCtx,
-      systemPrompt: buildSystemPrompt({ pack, character: char, world, persona: resolvePersona(activeCampaignId), loreHits, memory, tension: tensionBlock }),
+      systemPrompt: buildSystemPrompt({ pack: activePack, character: char, world, persona: resolvePersona(activeCampaignId), loreHits, memory, tension: tensionBlock }),
       onDelta: (t) => {
         streamAcc += t;
         const shown = extractNarrativePrefix(streamAcc);
@@ -1028,8 +1065,8 @@ ipcMain.handle('check:withChat', async (_e, skill: string) => {
   const value = char.skills[skill] ?? char.attributes[skill];
   if (value === undefined) throw new Error(`未知技能: ${skill}`);
 
-  // ① 本地检定（判定本地化铁律：结果由引擎产生，AI 只基于结果叙事）
-  const a = adjudicate({ rulePack: pack, skill, value, seed: `check-${Date.now()}` });
+  // ① 本地检定（判定本地化铁律：结果由引擎产生，AI 只基于结果叙事；按战役规则包裁定）
+  const a = adjudicate({ rulePack: loadRulePackFor(campaign.rulePackId), skill, value, seed: `check-${Date.now()}` });
   const world = World.loadFromDb(store.db, activeCampaignId);
   const rec = world.addDice('d100', a.takenRoll, a.diceRolls, `${skill}（${a.label}）`, 'player', `check-${Date.now()}`);
   world.saveToDb(store.db, activeCampaignId);

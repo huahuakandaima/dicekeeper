@@ -52,6 +52,8 @@ export function App() {
   const [scenario, setScenario] = useState<{ id: string; name: string; hooks: string[] } | null>(null);
   const [scenarioPacks, setScenarioPacks] = useState<PackMeta[]>([]);
   const [selScenarioId, setSelScenarioId] = useState('');
+  const [selRulePackId, setSelRulePackId] = useState(''); // 建团规则包（空=默认 CoC 7e；"不能换规则包"修复）
+  const [rulePacksList, setRulePacksList] = useState<{ id: string; name: string; version: string }[]>([]);
   const [packsInfo, setPacksInfo] = useState<{ rulePacks: PackMeta[]; scenarioPacks: PackMeta[] } | null>(null);
   const [packNotice, setPackNotice] = useState('');
   const [packEditor, setPackEditor] = useState<{ type: 'rule' | 'scenario'; meta: PackMeta } | null>(null); // P3b 内容编辑器
@@ -326,13 +328,14 @@ export function App() {
   // 挂载：读取战役列表；有历史战役则自动打开最近一个（重启恢复体验）
   useEffect(() => {
     (async () => {
-      const [list, info, packs, p] = await Promise.all([window.dk.campaign.list(), window.dk.scenario.info(), window.dk.scenario.list(), window.dk.personas.list()]);
+      const [list, info, packs, p, pk] = await Promise.all([window.dk.campaign.list(), window.dk.scenario.info(), window.dk.scenario.list(), window.dk.personas.list(), window.dk.packs.list()]);
       setCampaigns(list);
       setScenario(info);
       setScenarioPacks(packs);
       setSelScenarioId(packs[0]?.id ?? '');
       setPersonas(p);
       setSelPersonaId(p.defaultId || p.presets[0]?.id || '');
+      setRulePacksList(pk.rulePacks);
       setCfg((c) => ({ ...c, defaultPersonaId: c.defaultPersonaId || p.defaultId || p.presets[0]?.id || '' }));
       if (list.length > 0) await openCampaign(list[0].id);
     })();
@@ -453,7 +456,7 @@ export function App() {
     if (!name) { setNotice('请输入战役名称'); return; }
     setShowNew(false);
     setNewName('');
-    const c = await window.dk.campaign.create({ name, seed: preview?.seed ?? `ui-${Date.now()}`, charName, scenarioPackId: selScenarioId || undefined, loaded, personaId: selPersonaId || undefined });
+    const c = await window.dk.campaign.create({ name, seed: preview?.seed ?? `ui-${Date.now()}`, charName, scenarioPackId: selScenarioId || undefined, loaded, personaId: selPersonaId || undefined, rulePackId: selRulePackId || undefined });
     setCampaigns(await window.dk.campaign.list());
     await openCampaign(c.id);
   }
@@ -1007,6 +1010,17 @@ export function App() {
                 autoFocus
               />
             </label>
+            {rulePacksList.length > 0 && (
+              <label>规则包
+                <select value={selRulePackId} onChange={(e) => setSelRulePackId(e.target.value)}>
+                  <option value="">默认（克苏鲁的呼唤 7 版）</option>
+                  {rulePacksList.map((rp) => (
+                    <option key={rp.id} value={rp.id}>{rp.name} v{rp.version}</option>
+                  ))}
+                </select>
+                <span className="dim">决定属性/技能/检定规则；自建/导入的规则包在此选择（默认 CoC 7e）。剧本包依赖的规则包会被所选覆盖</span>
+              </label>
+            )}
             {scenarioPacks.length > 0 && (
               <label>剧本包
                 <select value={selScenarioId} onChange={(e) => setSelScenarioId(e.target.value)}>

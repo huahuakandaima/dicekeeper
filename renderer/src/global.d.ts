@@ -16,7 +16,7 @@ declare global {
       };
       campaign: {
         list: () => Promise<{ id: string; name: string; pcCount: number; scenarioPackId?: string; msgs?: number; tokens?: number }[]>;
-        create: (opts: { name: string; seed?: string; charName?: string; charSpec?: CharSpec; derivedOverrides?: Record<string, number>; scenarioPackId?: string; loaded?: boolean; personaId?: string }) => Promise<{ id: string; name: string }>;
+        create: (opts: { name: string; seed?: string; charName?: string; charSpec?: CharSpec; derivedOverrides?: Record<string, number>; scenarioPackId?: string; loaded?: boolean; personaId?: string; rulePackId?: string }) => Promise<{ id: string; name: string }>;
         open: (id: string) => Promise<{ id: string; name: string; personaId?: string }>;
         delete: (id: string) => Promise<{ ok: boolean }>;
         characters: (id: string) => Promise<CharView[]>;
