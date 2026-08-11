@@ -61,3 +61,13 @@ jobs:
           gh release create "${{ steps.ver.outputs.ver }}" dist-package/*.exe \
             --title "DiceKeeper ${{ steps.ver.outputs.ver }}" \
             --notes "自动发布：$MSG"
+      # 同步递增后的版本号写回仓库（开发端窗口标题 app.getVersion() 读本地 package.json，
+      # 不同步则开发端永远显示旧版本）；[skip ci] 防止本次 push 再触发 workflow 循环发版
+      - name: 同步版本号回仓库
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: 同步版本号 ${{ steps.ver.outputs.ver }} [skip ci]" || echo "无版本变更"
+          git push origin main
