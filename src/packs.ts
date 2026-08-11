@@ -193,6 +193,40 @@ export function loadImportedRulePack(store: PackStore, id: string): RulePack | n
   }
 }
 
+// 从零新建包模板（P3b 增强：内容包 tab「＋ 新建」入口）：生成可过校验的最小合法骨架，用户再编辑
+// 规则包：CoC 风格 attributes/skills + check_rules（extreme/hard/normal/crit_fail，同 DSL 函数）
+// 剧本包：world/npc_seeds/locations/plot_threads/hooks/lore_entries 各给 1 条占位示例（校验要求非空）
+export function buildNewPackTemplate(type: PackType, name: string, id: string): RulePack | ScenarioPack {
+  const base = { id, name, version: '1.0' };
+  if (type === 'rule') {
+    return {
+      ...base,
+      dice_schema: 'd100',
+      character_sheet: {
+        attributes: ['STR', 'CON', 'DEX', 'APP', 'INT', 'POW', 'EDU', 'SIZ'],
+        derived: ['HP', 'MP', 'SAN'],
+        skills: [{ name: '示例技能', base: 50, category: '调查' }],
+      },
+      check_rules: {
+        extreme: 'd100 <= fifth(SKILL)',
+        hard: 'd100 <= half(SKILL)',
+        normal: 'd100 <= SKILL',
+        crit_fail: 'd100 >= 96',
+      },
+    } as RulePack;
+  }
+  return {
+    ...base,
+    requires: 'coc7e',
+    world: { summary: '（在此填写世界观设定：时代、地点、氛围、势力）' },
+    npc_seeds: [{ name: '示例 NPC', traits: '（在此填写性格特征）' }],
+    locations: [{ name: '示例地点' }],
+    plot_threads: [{ id: 't1', name: '示例线索', status: 'open' }],
+    hooks: ['（在此填写开场钩子，玩家由此入场）'],
+    lore_entries: [{ id: 'l1', key_terms: ['示例关键词'], activation: 'blue', content: '（在此填写世界书内容：命中关键词时给守密人的提示）' }],
+  } as ScenarioPack;
+}
+
 // —— P3b 内容编辑器：对象解析/序列化/保存/试跑 ——
 
 // 解析包文本（.dk 头或纯 YAML）为对象并校验

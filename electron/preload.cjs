@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld('dk', {
   },
   editor: {
     open: (type, id) => ipcRenderer.invoke('editor:open', type, id),
+    create: (req) => ipcRenderer.invoke('editor:create', req),
     save: (req) => ipcRenderer.invoke('editor:save', req),
     testCheck: (req) => ipcRenderer.invoke('editor:testCheck', req),
     testDist: (req) => ipcRenderer.invoke('editor:testDist', req),

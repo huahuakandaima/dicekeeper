@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => readFileSync(p, 'utf-8');
-import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
+import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
 import { loadScenarioPack } from '../src/scenario.ts';
 import { loadRulePack } from '../src/rules.ts';
 
@@ -192,4 +192,41 @@ test('testPackDistribution：1000 次档位统计，成功概率 ≈ 技能值',
   assert.ok(d.counts.crit_fail >= 30 && d.counts.crit_fail <= 60, `大失败 ${d.counts.crit_fail}% 应在 5% 附近`);
   // 失败 = 剩余
   assert.equal(d.counts.fail, 1000 - success - d.counts.crit_fail);
+});
+
+// P3b 增强：从零新建包模板（「＋ 新建规则包/剧本包」入口）——模板必须能过导入校验
+test('buildNewPackTemplate：规则包模板通过完整校验 + 可保存', () => {
+  const tpl = buildNewPackTemplate('rule', '我的规则', 'rule-test1');
+  const body = serializePackObject('rule', tpl as never);
+  const res = validatePackContent(dkContent('rule', body), []);
+  assert.equal(res.ok, true);
+  assert.equal(res.type, 'rule');
+  assert.equal(res.meta?.id, 'rule-test1');
+  assert.equal(res.meta?.name, '我的规则');
+  // check_rules 表达式合法（DSL 可解析）
+  assert.equal((tpl as Record<string, unknown>).dice_schema, 'd100');
+  const cr = (tpl as Record<string, unknown>).check_rules as Record<string, string>;
+  assert.ok(cr.extreme && cr.hard && cr.normal && cr.crit_fail);
+});
+
+test('buildNewPackTemplate：剧本包模板通过校验（requires=coc7e 已装语义）', () => {
+  const tpl = buildNewPackTemplate('scenario', '我的剧本', 'scen-test1');
+  const body = serializePackObject('scenario', tpl as never);
+  const res = validatePackContent(dkContent('scenario', body), ['coc7e']);
+  assert.equal(res.ok, true);
+  assert.equal(res.type, 'scenario');
+  assert.equal(res.meta?.requires, 'coc7e');
+  const s = tpl as Record<string, unknown>;
+  assert.ok(Array.isArray(s.npc_seeds) && (s.npc_seeds as unknown[]).length === 1);
+  assert.ok(Array.isArray(s.lore_entries) && (s.lore_entries as unknown[]).length === 1);
+  // 依赖检查：requires 未装 → 拒绝（与导入同规则）
+  const bad = validatePackContent(dkContent('scenario', body), []);
+  assert.equal(bad.ok, false);
+});
+
+test('buildNewPackTemplate：id 唯一性语义（时间戳前缀）', () => {
+  const a = buildNewPackTemplate('rule', '甲', 'rule-abc');
+  const b = buildNewPackTemplate('scenario', '乙', 'scen-def');
+  assert.notEqual((a as Record<string, unknown>).id, (b as Record<string, unknown>).id);
+  assert.equal((a as Record<string, unknown>).name, '甲');
 });

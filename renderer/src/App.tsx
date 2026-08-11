@@ -118,6 +118,12 @@ export function App() {
     setPacksInfo(await window.dk.packs.list());
   }
   // B12 导入向导：校验 → 冲突检测 → 预览确认（覆盖/换名/取消）
+  // P3b 增强：从零新建规则包/剧本包（后端生成合法模板 → 直接打开编辑器）
+  async function doNewPack(type: 'rule' | 'scenario') {
+    const r = await window.dk.editor.create({ type });
+    if (!r.ok || !r.meta) { setPackNotice(`✗ 新建失败：${r.error ?? '未知错误'}`); return; }
+    setPackEditor({ type, meta: r.meta });
+  }
   async function doImportPack() {
     const r = await window.dk.packs.import();
     if (r.canceled) return;
@@ -1311,7 +1317,11 @@ export function App() {
             <div className="packs-box">
               <div className="packs-head">
                 <b>内容包（规则包 / 剧本包）</b>
-                <button className="ghost" onClick={doImportPack}>📥 导入 .dk</button>
+                <span className="pack-actions">
+                  <button className="ghost" onClick={() => doNewPack('rule')} title="从零创建规则包">＋ 新建规则包</button>
+                  <button className="ghost" onClick={() => doNewPack('scenario')} title="从零创建剧本包">＋ 新建剧本包</button>
+                  <button className="ghost" onClick={doImportPack}>📥 导入 .dk</button>
+                </span>
               </div>
               <button className="ghost" onClick={refreshPacks}>刷新列表</button>
               {packsInfo && (

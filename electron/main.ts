@@ -36,7 +36,7 @@ import { OpenAiCompatibleProvider, MockProvider, type Provider } from '../src/ga
 import { runChat, extractNarrativePrefix } from '../src/gateway/chat.ts';
 import { buildSystemPrompt } from '../src/gateway/prompt.ts';
 import type { ToolContext } from '../src/gateway/tools.ts';
-import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, type PackMeta, type PackSummary } from '../src/packs.ts';
+import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, type PackMeta, type PackSummary } from '../src/packs.ts';
 import { PRESET_PERSONAS, renderPersona, validatePersona, findPersona, type Persona } from '../src/personas.ts';
 import { checkOllama, listOllamaModels, pullOllamaModel, downloadFile, recommendModel, OLLAMA_DOWNLOAD_URL, OLLAMA_OPENAI_URL } from '../src/ollama.ts';
 import { HWINFO_PS_SCRIPT, parseHwInfo } from '../src/hwinfo.ts';
@@ -1092,6 +1092,23 @@ function packMetaById(type: 'rule' | 'scenario', id: string): PackMeta | null {
   return (type === 'rule' ? listRulePacks() : listScenarioPacks()).find((m) => m.id === id) ?? null;
 }
 // 打开编辑器：返回解析后的对象（表单用）+ 序列化 YAML（源码视图用）
+// 新建内容包：生成合法最小模板 → 校验 → 落盘 → 返回 meta（前端拿到后打开编辑器）
+ipcMain.handle('editor:create', (_e, req: { type?: 'rule' | 'scenario'; name?: string }) => {
+  const type: 'rule' | 'scenario' = req?.type === 'scenario' ? 'scenario' : 'rule';
+  const rawName = String(req?.name ?? '').trim().slice(0, 20);
+  const name = rawName || (type === 'rule' ? '新规则包' : '新剧本包');
+  const id = `${type === 'rule' ? 'rule' : 'scen'}-${Date.now().toString(36)}`;
+  try {
+    const obj = buildNewPackTemplate(type, name, id);
+    const body = serializePackObject(type, obj as never);
+    const res = validatePackContent(dkContent(type, body), listRulePacks().map((m) => m.id));
+    if (!res.ok || !res.meta) return { ok: false, error: res.error ?? '模板校验失败' };
+    packStore.save(type, res.meta, body);
+    return { ok: true, meta: res.meta };
+  } catch (e) {
+    return { ok: false, error: `创建失败：${(e as Error).message}` };
+  }
+});
 ipcMain.handle('editor:open', (_e, type: 'rule' | 'scenario', id: string) => {
   const meta = packMetaById(type, id);
   if (!meta) return { ok: false, error: `内容包不存在: ${type}/${id}` };

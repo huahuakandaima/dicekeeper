@@ -59,6 +59,7 @@ declare global {
       };
       editor: {
         open: (type: 'rule' | 'scenario', id: string) => Promise<EditorOpenResult>;
+        create: (req: { type?: 'rule' | 'scenario'; name?: string }) => Promise<{ ok: boolean; meta?: PackMeta; error?: string }>;
         save: (req: { type: 'rule' | 'scenario'; id: string; isBuiltin: boolean; obj: Record<string, unknown> }) => Promise<{ ok: boolean; meta?: PackMeta; savedAs?: string; error?: string }>;
         testCheck: (req: { obj: Record<string, unknown>; skill: string; value: number; mode?: 'normal' | 'reward' | 'penalty' }) => Promise<CheckResult>;
         testDist: (req: { obj: Record<string, unknown>; skill: string; value: number; mode?: 'normal' | 'reward' | 'penalty'; trials?: number }) => Promise<{ trials: number; counts: Record<string, number> }>;
