@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { serializeYaml } from '../src/yaml-write.ts';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => readFileSync(p, 'utf-8');
-import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
+import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, parseAiOutput, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
 import { loadScenarioPack } from '../src/scenario.ts';
 import { loadRulePack, parseYaml } from '../src/rules.ts';
 
@@ -341,4 +341,22 @@ test('sanitizeAiYaml：清洗后可通过严格解析器', () => {
   const parsed = parseYaml(clean) as Record<string, unknown>;
   assert.equal(parsed.id, 'test');
   assert.equal(parsed.name, '测试');
+});
+
+// AI 输出智能解析：JSON 对象 / YAML / 无效输出
+test('parseAiOutput：JSON 输出被正确解析（修复按规则包生成后应用全是模板）', () => {
+  const json = JSON.stringify({ id: 'scen-test', name: '选秀夜', version: '1.0', requires: 'coc7e', world: { summary: '2003 年选秀夜。' }, npc_seeds: [{ name: '主教练', traits: '苛刻' }] });
+  const obj = parseAiOutput(json);
+  assert.ok(obj, 'JSON 应被解析');
+  assert.equal(obj.id, 'scen-test');
+  assert.equal(obj.name, '选秀夜');
+  assert.ok(Array.isArray(obj.npc_seeds) && (obj.npc_seeds as unknown[]).length === 1);
+});
+test('parseAiOutput：YAML 输出正常解析；无识别字段返回 null', () => {
+  const yaml = 'id: scen-y\nname: 测试\nworld:/n  summary: 世界观\n';
+  const obj = parseAiOutput(yaml);
+  assert.ok(obj && obj.id === 'scen-y');
+  // 纯解释文字（无识别字段）→ null（触发重试）
+  assert.equal(parseAiOutput('好的，我来生成一个剧本包。'), null);
+  assert.equal(parseAiOutput(''), null);
 });

@@ -36,7 +36,7 @@ import { OpenAiCompatibleProvider, MockProvider, type Provider } from '../src/ga
 import { runChat, extractNarrativePrefix } from '../src/gateway/chat.ts';
 import { buildSystemPrompt } from '../src/gateway/prompt.ts';
 import type { ToolContext } from '../src/gateway/tools.ts';
-import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, loadImportedRulePack, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, type PackMeta, type PackSummary } from '../src/packs.ts';
+import { PackStore, validatePackContent, dkContent, parseDk, loadImportedScenario, loadImportedRulePack, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, sanitizeAiYaml, parseAiOutput, testPackCheck, testPackDistribution, testPackLore, summarizePackContent, type PackMeta, type PackSummary } from '../src/packs.ts';
 import { PRESET_PERSONAS, renderPersona, validatePersona, findPersona, type Persona } from '../src/personas.ts';
 import { checkOllama, listOllamaModels, pullOllamaModel, downloadFile, recommendModel, OLLAMA_DOWNLOAD_URL, OLLAMA_OPENAI_URL } from '../src/ollama.ts';
 import { HWINFO_PS_SCRIPT, parseHwInfo } from '../src/hwinfo.ts';
@@ -1328,45 +1328,44 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
       `主题/需求：${String(req?.prompt ?? '克苏鲁风格悬疑剧本')}`,
       target === 'adjust' && req?.prevDraft ? `现有草稿：\n${req.prevDraft}` : null,
     ].filter(Boolean).join('\n\n');
-    // AI 输出不可控：清洗（tab/行尾空白）+ 解析失败自动重试 1 次（LLM 偶尔缩进不齐，自研解析器严格）
-    let yaml = '';
+    // AI 输出不可控：清洗 + 智能解析（YAML/JSON 都支持）+ 解析失败自动重试 1 次
+    let raw: Record<string, unknown> | null = null;
+    let rawText = '';
     let parseErr: Error | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       const res = await provider.chat(
         [
           { role: 'system', content: system },
-          { role: 'user', content: userParts + (attempt > 0 ? '\n\n（提示：上次输出 YAML 解析失败，请严格两空格缩进、输出纯 YAML、不要任何解释文字或 markdown 代码块标记）' : '') },
+          { role: 'user', content: userParts + (attempt > 0 ? '\n\n（提示：上次输出无法解析，请严格两空格缩进输出纯 YAML（或 JSON 对象），不要任何解释文字、不要 markdown 代码块标记）' : '') },
         ],
         [],
         { temperature: 0.7, maxTokens: 3000 },
       );
-      yaml = sanitizeAiYaml(extractYaml(res.content ?? ''));
-      try {
-        parseYaml(yaml);
+      rawText = extractYaml(res.content ?? '');
+      raw = parseAiOutput(rawText);
+      if (raw) {
         parseErr = null;
         break;
-      } catch (e) {
-        parseErr = e as Error;
       }
+      parseErr = new Error('输出无法解析为 YAML/JSON（可能是 JSON 或解释文字混入）');
     }
-    if (parseErr) {
-      return { ok: false, error: `AI 输出的 YAML 格式有问题（已自动重试 1 次仍失败）：${parseErr.message}。建议稍后点「生成」重试` };
+    if (parseErr || !raw) {
+      return { ok: false, error: `AI 输出的格式有问题（已自动重试 1 次仍失败）：${parseErr?.message ?? ''}。建议稍后点「生成」重试` };
     }
     if (target === 'pack' || target === 'rule-pack' || target === 'scenario-from-rule' || target === 'adjust') {
       // 整包：AI 输出兜底规范化（缺 id/name/空字段用模板补全）→ 完整校验
-      const raw = parseYaml(yaml) as Record<string, unknown>;
       const normalized = normalizeGeneratedPack(type, raw, String(req?.prompt ?? ''));
       if (requiresId) normalized.requires = requiresId; // 按规则包生成：依赖锁定所选规则包
       const obj = parsePackObject(type, serializeYaml(normalized));
       return { ok: true, target, draft: obj, yaml: serializePackObject(type, obj), isWhole: true };
     }
     // 单点：带顶层 key 解析后提取该字段（AI 生成部分，保存时统一校验）
+    // 单点：从智能解析结果提取该字段（AI 生成部分，保存时统一校验）
     const field = AI_TARGET_FIELD[target];
-    const parsed = parseYaml(yaml) as Record<string, unknown>;
-    if (!field || !(field in parsed)) {
+    if (!field || !(field in raw)) {
       return { ok: false, error: `AI 输出缺少 ${field} 字段，请重试` };
     }
-    return { ok: true, target, field, draft: parsed[field], yaml };
+    return { ok: true, target, field, draft: raw[field], yaml: rawText };
   } catch (e) {
     // AI 输出问题给可操作提示（不是纯技术报错）
     const msg = (e as Error).message;

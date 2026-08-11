@@ -17,6 +17,30 @@ export function sanitizeAiYaml(src: string): string {
     .join('\n')
     .replace(/\n{3,}/g, '\n\n');
 }
+
+// AI 生成输出智能解析（修复"按规则包生成后应用全是模板占位"）：
+// LLM 偶尔输出 JSON（DeepSeek 注入规则包摘要后尤其容易），自研 YAML 解析器会把 JSON 解析成怪异结构
+// → 先试 JSON（以 { 开头），再试 YAML；两者都失败或结果无识别字段 → 返回 null（触发重试）
+const AI_PACK_KEYS = ['id', 'name', 'version', 'requires', 'world', 'npc_seeds', 'locations', 'plot_threads', 'hooks', 'lore_entries', 'encounters', 'character_sheet', 'check_rules', 'dice_schema'];
+export function parseAiOutput(text: string): Record<string, unknown> | null {
+  const clean = sanitizeAiYaml(text).trim();
+  if (!clean) return null;
+  // 尝试 JSON（对象或数组开头）
+  if (clean.startsWith('{') || clean.startsWith('[')) {
+    try {
+      const obj = JSON.parse(clean) as unknown;
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) return obj as Record<string, unknown>;
+    } catch { /* 不是 JSON，继续 YAML */ }
+  }
+  try {
+    const obj = parseYaml(clean) as Record<string, unknown>;
+    const keys = Object.keys(obj);
+    if (keys.length === 0 || !keys.some((k) => AI_PACK_KEYS.includes(k))) return null;
+    return obj;
+  } catch {
+    return null;
+  }
+}
 import { validateScenarioPack, type ScenarioPack } from './scenario.ts';
 import { serializeYaml } from './yaml-write.ts';
 import { adjudicate } from './adjudicate.ts';
