@@ -78,6 +78,9 @@ button.ghost { background: transparent; }
 .skill-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .skill { text-align: left; font-size: 12px; padding: 6px 8px; }
 .skill .dim { float: right; }
+/* 叙事行动按钮（规则包 action: narrative）：不掷骰，发送行动由守密人叙事 */
+.skill-narrative { border-color: var(--accent); color: var(--accent); }
+.skill-narrative .dim { color: var(--accent); opacity: .7; }
 .dice-log { list-style: none; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
 .dice-log li { border-bottom: 1px dashed var(--line); padding: 4px 0; }
 .dice-log b { color: var(--accent); margin-right: 4px; }

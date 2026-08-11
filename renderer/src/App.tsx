@@ -52,6 +52,8 @@ export function App() {
   const [pendingDel, setPendingDel] = useState<{ id: string; name: string } | null>(null); // 删除确认
   const [scenario, setScenario] = useState<{ id: string; name: string; hooks: string[] } | null>(null);
   const [scenarioPacks, setScenarioPacks] = useState<PackMeta[]>([]);
+  // 技能按钮类型（规则包 character_sheet.skills[].action：check/narrative/none）——右侧技能栏按此渲染
+  const [skillActions, setSkillActions] = useState<Record<string, 'check' | 'narrative' | 'none'>>({});
   const [selScenarioId, setSelScenarioId] = useState('');
   const [selRulePackId, setSelRulePackId] = useState(''); // 建团规则包（空=默认 CoC 7e；"不能换规则包"修复）
   const [rulePacksList, setRulePacksList] = useState<{ id: string; name: string; version: string }[]>([]);
@@ -541,6 +543,9 @@ export function App() {
     // 按当前战役刷新剧本包（开场白用 hooks[0]；曾只在挂载时取一次=内置雾港，选自定义剧本包开场仍默认）
     const info = await window.dk.scenario.info();
     setScenario(info);
+    // 技能按钮类型（按当前战役规则包）：右侧技能栏按 action 渲染检定/叙事行动/不显示
+    const f = await window.dk.characters.fields();
+    setSkillActions(Object.fromEntries(f.skills.map((s) => [s.name, s.action])));
     const chars = await window.dk.campaign.characters(id);
     setChar(chars[0] ?? null);
     // 反馈修复：重开战役恢复最近会话的聊天历史（不再每次新建空会话丢记录）
@@ -862,13 +867,28 @@ export function App() {
             </div>
           )}
           <div className="skill-grid">
-            {skillList.slice(0, 12).map(([name, v]) => (
-              <HoverTip key={name} text={`${COC_SKILL_DESC[name] ?? '技能'}（当前 ${v}%，点击检定）`}>
-                <button className="skill" onClick={() => doCheck(name)} disabled={busy} title="">
-                  {name} <span className="dim">{v}</span>
-                </button>
-              </HoverTip>
-            ))}
+            {skillList.slice(0, 12).map(([name, v]) => {
+              const action = skillActions[name] ?? 'check';
+              // action=none：不渲染按钮（规则包声明该技能非检定也非行动按钮）
+              if (action === 'none') return null;
+              // action=narrative：叙事行动——不掷骰，作为行动消息发送由守密人叙事推进
+              if (action === 'narrative') {
+                return (
+                  <HoverTip key={name} text={`${COC_SKILL_DESC[name] ?? '技能'}（当前 ${v}）· 叙事行动：不掷骰，点击发送行动由守密人叙事推进`}>
+                    <button className="skill skill-narrative" onClick={() => send(`我使用「${name}」（当前 ${v}）`)} disabled={busy}>
+                      {name} <span className="dim">{v} · 行动</span>
+                    </button>
+                  </HoverTip>
+                );
+              }
+              return (
+                <HoverTip key={name} text={`${COC_SKILL_DESC[name] ?? '技能'}（当前 ${v}%，点击检定）`}>
+                  <button className="skill" onClick={() => doCheck(name)} disabled={busy}>
+                    {name} <span className="dim">{v}</span>
+                  </button>
+                </HoverTip>
+              );
+            })}
           </div>
         </section>
         <section>

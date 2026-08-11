@@ -96,6 +96,12 @@ function ObjListEditor({ list, onChange }: { list: unknown[]; onChange: (v: unkn
 }
 
 // 对象：字段行（可删）+ 添加自定义字段
+// action 字段（规则包技能按钮类型，2026-08-11 用户需求"编辑时配置按钮"）：check/narrative/none 下拉
+const ACTION_OPTIONS: Record<string, string> = {
+  check: '检定（d100 对比技能值）',
+  narrative: '叙事行动（不掷骰，AI 叙事推进）',
+  none: '不显示按钮',
+};
 function ObjEditor({ obj, onChange }: { obj: Record<string, unknown>; onChange: (v: Record<string, unknown>) => void }) {
   const [newKey, setNewKey] = useState('');
   const entries = Object.entries(obj);
@@ -111,7 +117,13 @@ function ObjEditor({ obj, onChange }: { obj: Record<string, unknown>; onChange: 
               onChange(rest);
             }}>×</button>
           </div>
-          <ValueEditor value={v} onChange={(nv) => onChange({ ...obj, [k]: nv })} />
+          {k === 'action' ? (
+            <select value={String(v ?? 'check')} onChange={(e) => onChange({ ...obj, [k]: e.target.value })}>
+              {Object.entries(ACTION_OPTIONS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+            </select>
+          ) : (
+            <ValueEditor value={v} onChange={(nv) => onChange({ ...obj, [k]: nv })} />
+          )}
         </div>
       ))}
       <div className="add-key">

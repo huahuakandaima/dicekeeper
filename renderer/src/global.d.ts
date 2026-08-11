@@ -141,7 +141,7 @@ export interface CharSpec {
 
 export interface CharFields {
   attributes: { name: string; desc: string }[];
-  skills: { name: string; base: number; desc: string }[];
+  skills: { name: string; base: number; desc: string; action: 'check' | 'narrative' | 'none' }[];
   derived: { name: string; desc: string }[];
   occupations: string[];
 }

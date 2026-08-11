@@ -91,3 +91,33 @@ test('校验：非法 DSL 表达式拒绝', () => {
   };
   assert.throws(() => validateRulePack(bad as unknown as Record<string, unknown>), /表达式非法/);
 });
+
+// 技能按钮类型（action：check/narrative/none）——规则包"编辑时配置按钮"（2026-08-11 用户需求）
+test('校验：skills action 枚举合法值接受、非法值拒绝、缺省视为 check', () => {
+  const base = {
+    id: 'x', name: 'n', version: '1', dice_schema: 'd100',
+    character_sheet: { attributes: ['A'], skills: [] },
+    check_rules: { normal: 'd100 <= SKILL' },
+  };
+  // 合法：check/narrative/none 混用
+  const ok = validateRulePack({
+    ...base,
+    character_sheet: {
+      attributes: ['A'],
+      skills: [
+        { name: '检定技能', base: 50, category: 'c1' },
+        { name: '叙事技能', base: 40, category: 'c1', action: 'narrative' },
+        { name: '隐藏技能', base: 30, category: 'c1', action: 'none' },
+        { name: '显式检定', base: 20, category: 'c1', action: 'check' },
+      ],
+    },
+  } as unknown as Record<string, unknown>);
+  assert.equal(ok.character_sheet.skills[0].action, undefined); // 缺省不填
+  assert.equal(ok.character_sheet.skills[1].action, 'narrative');
+  assert.equal(ok.character_sheet.skills[2].action, 'none');
+  // 非法枚举拒绝
+  assert.throws(() => validateRulePack({
+    ...base,
+    character_sheet: { attributes: ['A'], skills: [{ name: 'x', base: 10, category: 'c', action: 'roll' }] },
+  } as unknown as Record<string, unknown>), /action 非法/);
+});

@@ -747,7 +747,7 @@ ipcMain.handle('characters:fields', (_e, rulePackId?: string) => {
   const rp = rulePackId ? loadRulePackFor(rulePackId) : currentRulePack();
   return {
     attributes: rp.character_sheet.attributes.map((name) => ({ name, desc: COC_ATTRIBUTE_DESC[name] ?? GENERIC_DESC })),
-    skills: rp.character_sheet.skills.map((s) => ({ name: s.name, base: s.base, desc: COC_SKILL_DESC[s.name] ?? GENERIC_DESC })),
+    skills: rp.character_sheet.skills.map((s) => ({ name: s.name, base: s.base, desc: COC_SKILL_DESC[s.name] ?? GENERIC_DESC, action: s.action ?? 'check' })),
     derived: rp.character_sheet.derived.map((name) => ({ name, desc: COC_DERIVED_DESC[name] ?? GENERIC_DESC })),
     occupations: (rp.chargen?.occupations ?? []).map((o) => o.name),
   };
@@ -1361,6 +1361,7 @@ character_sheet:
   derived: [衍生值1, ...]
   skills:
     - {name: 技能名, base: 初始值, category: 分类}
+    - {name: 技能名, base: 初始值, category: 分类, action: narrative}
 check_rules:
   extreme: "DSL 表达式（如 d100 <= fifth(SKILL)）"
   hard: "d100 <= half(SKILL)"
@@ -1374,6 +1375,7 @@ chargen:
   occupations:
     - {name: 职业名, skills: [技能1, 技能2], points: "点数公式（如 EDU*2+INT*2）"}
 rules_reference: 规则文本（裁决时注入，用 | 块标量）
+skills 条目可带 action 声明按钮类型：check=检定（默认，d100 对比技能值）/ narrative=叙事行动（不掷骰，玩家点击作为行动发送，由守密人叙事推进）/ none=不显示按钮
 DSL 可用函数：floor/half/fifth/advantage/disadvantage/successes/min/max；骰子 d100/2d6 等；字段引用 SKILL 或属性名。
 格式约束：缩进两空格；list 项展开；全中文（技能/属性/职业名用中文）。`,
 };
@@ -1755,7 +1757,19 @@ function createWindow(): void {
             .then(() => 'OK').catch(() => 'FAIL');
           return JSON.stringify({ bad, good });
         })`);
-        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
+        // 技能按钮类型（用户需求"编辑时配置按钮"）：规则包 skills 条目 action 字段 → fields 透传
+        // narrative 技能保存后 fields 返回 narrative（UI 右侧技能栏按此渲染）
+        const r37 = await js(`window.dk.editor.create({ type: 'rule', name: 'E2E 行动规则包' }).then(async (c) => {
+          if (!c.ok || !c.meta) return JSON.stringify({ create: false });
+          const opened = await window.dk.editor.open('rule', c.meta.id);
+          const cs = opened.obj.character_sheet;
+          cs.skills[0] = { ...cs.skills[0], action: 'narrative' };
+          const saved = await window.dk.editor.save({ type: 'rule', id: c.meta.id, isBuiltin: false, obj: opened.obj });
+          if (!saved.ok) return JSON.stringify({ save: false, err: saved.error || '' });
+          const f = await window.dk.characters.fields(c.meta.id);
+          return JSON.stringify({ action: f.skills[0].action, count: f.skills.length });
+        })`);
+        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 技能按钮类型=' + r37 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
         console.log(line);
         try { writeFileSync(join(app.getPath('temp'), 'dk-e2e-result.txt'), line, 'utf-8'); } catch { /* 非关键 */ }
       } catch (e) {

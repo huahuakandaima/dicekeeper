@@ -15,7 +15,9 @@ export interface RulePack {
   character_sheet: {
     attributes: string[];
     derived: string[];
-    skills: { name: string; base: number; category: string }[];
+    // action：技能按钮类型（2026-08-11 用户需求"不同规则包编辑时配置按钮"）——
+    // check=检定（默认，d100 对比技能值）/ narrative=叙事行动（不掷骰，AI 叙事推进）/ none=不显示按钮
+    skills: { name: string; base: number; category: string; action?: 'check' | 'narrative' | 'none' }[];
   };
   check_rules: Record<string, string>; // extreme/hard/normal/crit_fail 等，DSL 表达式
   modifiers?: { name: string; condition?: string }[];
@@ -205,6 +207,14 @@ export function validateRulePack(raw: Record<string, unknown>): RulePack {
   const cs = raw.character_sheet as Record<string, unknown> | undefined;
   if (!cs || typeof cs !== 'object') err('规则包缺少 character_sheet');
   if (!Array.isArray(cs.attributes) || (cs.attributes as unknown[]).length === 0) err('character_sheet.attributes 必须是非空数组');
+  // 技能按钮类型校验（action：check/narrative/none，缺省 check）
+  if (Array.isArray(cs.skills)) {
+    for (const s of cs.skills as Record<string, unknown>[]) {
+      if (s.action !== undefined && !['check', 'narrative', 'none'].includes(String(s.action))) {
+        err(`技能 ${String(s.name ?? '?')} 的 action 非法: "${String(s.action)}"（须为 check/narrative/none）`);
+      }
+    }
+  }
   const cr = raw.check_rules as Record<string, unknown> | undefined;
   if (!cr || typeof cr !== 'object') err('规则包缺少 check_rules');
   // 校验 check_rules 表达式可被 DSL 解析（试 parse，不执行——字段引用留到运行时）
