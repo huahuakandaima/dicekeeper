@@ -322,6 +322,8 @@ export function buildNewPackTemplate(type: PackType, name: string, id: string): 
     return {
       ...base,
       dice_schema: 'd100',
+      // GM/主持人称谓（"守密人"是 CoC 专属；模板用通用"主持人"，规则作者可改）
+      gm_title: '主持人',
       character_sheet: {
         attributes: ['STR', 'CON', 'DEX', 'APP', 'INT', 'POW', 'EDU', 'SIZ'],
         derived: ['HP', 'MP', 'SAN'],

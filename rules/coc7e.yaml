@@ -5,6 +5,7 @@ id: coc7e
 name: 克苏鲁的呼唤 7 版
 version: 1.0
 dice_schema: d100
+gm_title: 守密人
 
 character_sheet:
   attributes: [STR, CON, DEX, APP, INT, POW, EDU, SIZ]

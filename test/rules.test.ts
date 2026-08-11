@@ -121,3 +121,22 @@ test('校验：skills action 枚举合法值接受、非法值拒绝、缺省视
     character_sheet: { attributes: ['A'], skills: [{ name: 'x', base: 10, category: 'c', action: 'roll' }] },
   } as unknown as Record<string, unknown>), /action 非法/);
 });
+
+// gm_title（主持人称谓：守密人/地下城主/主持人…）——可选字段，字符串校验
+test('校验：gm_title 可选；合法字符串接受、非法类型拒绝；内置 coc7e 带 gm_title', () => {
+  const base = {
+    id: 'x', name: 'n', version: '1', dice_schema: 'd100',
+    character_sheet: { attributes: ['A'], skills: [] },
+    check_rules: { normal: 'd100 <= SKILL' },
+  };
+  // 缺省可过
+  assert.equal(validateRulePack(base as unknown as Record<string, unknown>).gm_title, undefined);
+  // 合法字符串
+  const ok = validateRulePack({ ...base, gm_title: '地下城主' } as unknown as Record<string, unknown>);
+  assert.equal(ok.gm_title, '地下城主');
+  // 非法类型拒绝
+  assert.throws(() => validateRulePack({ ...base, gm_title: 42 } as unknown as Record<string, unknown>), /gm_title/);
+  // 内置 coc7e 显式声明守密人
+  const pack = loadRulePack(join(RULES_DIR, 'coc7e.yaml'));
+  assert.equal(pack.gm_title, '守密人');
+});

@@ -11,8 +11,8 @@ import { MODEL_CARDS } from '../../src/ollama.ts';
 type Msg = { role: 'user' | 'keeper'; text: string; dice?: string[]; issues?: { kind: string; message: string }[]; prompt?: string | null };
 
 // 变更日志摘要（§11.5：who / 做了什么 / 目标）
-function summarizeChange(c: { actor: string; kind: string; target: string; before: unknown; after: unknown }): string {
-  const actor = c.actor === 'ai' ? '守密人' : c.actor === 'player' ? '玩家' : c.actor;
+function summarizeChange(c: { actor: string; kind: string; target: string; before: unknown; after: unknown }, gmTitle: string): string {
+  const actor = c.actor === 'ai' ? gmTitle : c.actor === 'player' ? '玩家' : c.actor;
   const nameOf = (o: unknown) => (o && typeof o === 'object' && 'name' in (o as object) ? (o as { name: string }).name : null);
   if (c.kind === 'entity_update') {
     const n = nameOf(c.after) ?? c.target;
@@ -54,6 +54,8 @@ export function App() {
   const [scenarioPacks, setScenarioPacks] = useState<PackMeta[]>([]);
   // 技能按钮类型（规则包 character_sheet.skills[].action：check/narrative/none）——右侧技能栏按此渲染
   const [skillActions, setSkillActions] = useState<Record<string, 'check' | 'narrative' | 'none'>>({});
+  // 主持人称谓（规则包 gm_title：守密人/地下城主/主持人…；"守密人"是 CoC 的叫法）
+  const [gmTitle, setGmTitle] = useState('守密人');
   const [selScenarioId, setSelScenarioId] = useState('');
   const [selRulePackId, setSelRulePackId] = useState(''); // 建团规则包（空=默认 CoC 7e；"不能换规则包"修复）
   const [rulePacksList, setRulePacksList] = useState<{ id: string; name: string; version: string }[]>([]);
@@ -414,12 +416,12 @@ export function App() {
       setLastSummary(r.summary);
       setMsgs((m) => [...m, {
         role: 'keeper',
-        text: `—— 📔 本节已结束，摘要已存档 ——\n守密人会在下一节开场引用这段摘要，从而记得本节发生的事。\n\n📝 存档摘要：\n${r.summary}`,
+        text: `—— 📔 本节已结束，摘要已存档 ——\n${gmTitle}会在下一节开场引用这段摘要，从而记得本节发生的事。\n\n📝 存档摘要：\n${r.summary}`,
       }]);
-      setNotice('✓ 本节已结束，摘要已存档（下一节守密人会记得本节）');
+      setNotice(`✓ 本节已结束，摘要已存档（下一节${gmTitle}会记得本节）`);
       const s = await window.dk.session.start();
       await window.dk.session.open(s.id);
-      setMsgs((m) => [...m, { role: 'keeper', text: '—— 新的一节开始。守密人翻开了上一节的记录。' }]);
+            setMsgs((m) => [...m, { role: 'keeper', text: `—— 新的一节开始。${gmTitle}翻开了上一节的记录。` }]);
     } catch (e) {
       setNotice(`结束会话失败：${(e as Error).message.replace(/^Error invoking remote method '[^']+':\s*/, '')}`);
     }
@@ -546,6 +548,7 @@ export function App() {
     // 技能按钮类型（按当前战役规则包）：右侧技能栏按 action 渲染检定/叙事行动/不显示
     const f = await window.dk.characters.fields();
     setSkillActions(Object.fromEntries(f.skills.map((s) => [s.name, s.action])));
+    setGmTitle(f.gmTitle ?? '守密人'); // 主持人称谓（规则包 gm_title）
     const chars = await window.dk.campaign.characters(id);
     setChar(chars[0] ?? null);
     // 反馈修复：重开战役恢复最近会话的聊天历史（不再每次新建空会话丢记录）
@@ -625,7 +628,7 @@ export function App() {
   async function saveSettings() {
     const r = await window.dk.settings.set(cfg);
     setShowSettings(false);
-    if (r.ok) setNotice('已保存。配置了 API 后守密人即可响应。');
+    if (r.ok) setNotice(`已保存。配置了 API 后${gmTitle}即可响应。`);
   }
 
   useEffect(() => {
@@ -759,7 +762,7 @@ export function App() {
             </div>
           </div>
         )}
-        <HoverTip text={'把本节全部对话压缩成一份摘要存档。\n下一节守密人只带摘要（不再逐轮重发本节全文），更省 token、记忆更清晰。\n一段冒险告一段落、或对话较长时点一下即可；不点也能继续玩。'}>
+        <HoverTip text={`把本节全部对话压缩成一份摘要存档。\n下一节${gmTitle}只带摘要（不再逐轮重发本节全文），更省 token、记忆更清晰。\n一段冒险告一段落、或对话较长时点一下即可；不点也能继续玩。`}>
           <button className="ghost" onClick={endSession} disabled={!campaignId}>📔 结束本节（存摘要）</button>
         </HoverTip>
         <button className="ghost" onClick={() => setRoomModal(true)}>🌐 联机</button>
@@ -791,7 +794,7 @@ export function App() {
           {busy && (
             <div className="msg keeper">
               <div className={pendingText ? 'bubble streaming' : 'bubble typing'}>
-                {pendingText || '守密人沉思中…'}
+                  {pendingText || `${gmTitle}沉思中…`}
               </div>
             </div>
           )}
@@ -838,7 +841,7 @@ export function App() {
               value={input}
               onChange={(e) => onInputChange(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && send()}
-              placeholder={roomJoined ? '描述你的行动…（由房主守密人响应）' : '描述你的行动…（例：去渔市码头 / @埃德加 聊聊 / 查看货舱）'}
+              placeholder={roomJoined ? `描述你的行动…（由房主${gmTitle}响应）` : '描述你的行动…（例：去渔市码头 / @埃德加 聊聊 / 查看货舱）'}
               disabled={busy}
             />
             {atCandidates.length > 0 && (
@@ -852,7 +855,7 @@ export function App() {
             )}
           </div>
           {/* 修复：onClick 曾直接绑 send —— React 会把 click 事件当 optText 传入导致 TypeError 静默失败（"发送键不管用只能回车"） */}
-          <button className="primary" onClick={() => send()} disabled={busy}>{busy ? '守密人思考中…' : '发送'}</button>
+          <button className="primary" onClick={() => send()} disabled={busy}>{busy ? `${gmTitle}思考中…` : '发送'}</button>
         </div>
         {notice && <div className="notice">{notice}</div>}
       </main>
@@ -874,7 +877,7 @@ export function App() {
               // action=narrative：叙事行动——不掷骰，作为行动消息发送由守密人叙事推进
               if (action === 'narrative') {
                 return (
-                  <HoverTip key={name} text={`${COC_SKILL_DESC[name] ?? '技能'}（当前 ${v}）· 叙事行动：不掷骰，点击发送行动由守密人叙事推进`}>
+                  <HoverTip key={name} text={`${COC_SKILL_DESC[name] ?? '技能'}（当前 ${v}）· 叙事行动：不掷骰，点击发送行动由${gmTitle}叙事推进`}>
                     <button className="skill skill-narrative" onClick={() => send(`我使用「${name}」（当前 ${v}）`)} disabled={busy}>
                       {name} <span className="dim">{v} · 行动</span>
                     </button>
@@ -895,7 +898,7 @@ export function App() {
           <h3>掷骰审计（最近）</h3>
           <ul className="dice-log">
             {diceLog.slice(0, 10).map((d) => (
-              <li key={d.id}><b>{d.result}</b> [{d.expression}] {d.reason} <span className="dim">由{d.requested_by === 'player' ? '玩家' : '守密人'}</span></li>
+              <li key={d.id}><b>{d.result}</b> [{d.expression}] {d.reason} <span className="dim">由{d.requested_by === 'player' ? '玩家' : gmTitle}</span></li>
             ))}
             {diceLog.length === 0 && <li className="dim">暂无记录</li>}
           </ul>
@@ -930,17 +933,17 @@ export function App() {
           ) : <li className="dim">加载中…</li>}
         </section>
         <section>
-          <h3>守密人的记忆（上节摘要）</h3>
+            <h3>{gmTitle}的记忆（上节摘要）</h3>
           {lastSummary ? (
-            <div className="summary-card" title="每轮对话都会注入守密人的上下文，开场叙事会自然带出">
+              <div className="summary-card" title={`每轮对话都会注入${gmTitle}的上下文，开场叙事会自然带出`}>
               {lastSummary.slice(0, 140)}{lastSummary.length > 140 ? '…' : ''}
             </div>
-          ) : <li className="dim">暂无存档摘要（点「📔 结束本节」后生成，供下一节守密人引用）</li>}
+          ) : <li className="dim">暂无存档摘要（点「📔 结束本节」后生成，供下一节{gmTitle}引用）</li>}
         </section>
         <section>
           <h3>上下文占用</h3>
           {tokenUsage ? (
-            <HoverTip text="守密人每轮回复都要发送这些内容（按 1 字 ≈ 1 token 估算）。对话越长每轮越贵越慢——点「结束本节」把消息压缩成摘要存档即可下降。">
+              <HoverTip text={`${gmTitle}每轮回复都要发送这些内容（按 1 字 ≈ 1 token 估算）。对话越长每轮越贵越慢——点「结束本节」把消息压缩成摘要存档即可下降。`}>
               <div className="token-card">
                 <div>消息：<b>{tokenUsage.messages.toLocaleString()}</b> tokens（{tokenUsage.msgCount} 条）</div>
                 <div>系统提示：<b>{tokenUsage.system.toLocaleString()}</b> tokens</div>
@@ -990,7 +993,7 @@ export function App() {
                 </select>
                 <button className="ghost" onClick={onAddFact}>＋</button>
               </div>
-              {worldData.facts.length === 0 && worldData.relations.length === 0 && <li className="dim">暂无记忆（守密人通过 remember / 互动会逐步建立；也可手动记录）</li>}
+              {worldData.facts.length === 0 && worldData.relations.length === 0 && <li className="dim">暂无记忆（{gmTitle}通过 remember / 互动会逐步建立；也可手动记录）</li>}
             </>
           ) : <li className="dim">加载中…</li>}
         </section>
@@ -1001,7 +1004,7 @@ export function App() {
               {worldData.changes.slice(0, 8).map((c) => (
                 <li key={c.id} className="fact-row">
                   <span className={`chg-kind chg-${c.kind}`}>{c.kind === 'manual' ? '手' : c.kind === 'entity_update' ? '改' : c.kind === 'entity_add' ? '增' : '记'}</span>
-                  <span className="fact-text" title={summarizeChange(c)}>{summarizeChange(c)}</span>
+                  <span className="fact-text" title={summarizeChange(c, gmTitle)}>{summarizeChange(c, gmTitle)}</span>
                   {c.kind !== 'manual' && <button className="danger-mini" title="回滚此变更" onClick={() => onRollback(c.id)}>↺</button>}
                 </li>
               ))}
@@ -1406,7 +1409,7 @@ export function App() {
                   </div>
                 </div>
               )}
-              <p className="hint">人格影响守密人的语气/风格/裁决倾向；建团时可选，也可在此设全局默认。自建人格存本机。</p>
+              <p className="hint">人格影响{gmTitle}的语气/风格/裁决倾向；建团时可选，也可在此设全局默认。自建人格存本机。</p>
             </div>
             </>
             )}

@@ -158,6 +158,20 @@ let mainWindow: BrowserWindow | null = null; // 流式叙事转发目标
 let provider: Provider = new MockProvider('offline', []); // 未配置 API 时离线兜底
 const DEFAULT_PERSONA = '你是克苏鲁跑团的守密人（KP），冷静、克制、营造氛围。用中文叙事，描写注重感官细节，让玩家做选择，不要替玩家做决定。';
 
+// GM/主持人称谓：规则包 gm_title 决定（"守密人"是 CoC 的；D&D 用"地下城主"等），缺省"守密人"
+function gmTitleOf(rp: RulePack): string {
+  const t = rp.gm_title?.trim();
+  return t || '守密人';
+}
+// 无自定义人格时的默认人格段：按当前战役规则包的 gm_title 生成（不同规则包主持人叫法不同）
+function defaultPersonaFor(campaignId: string | null): string {
+  let gm = '守密人';
+  if (campaignId) {
+    try { gm = gmTitleOf(loadRulePackFor(store.loadCampaign(campaignId).rulePackId)); } catch { /* 战役可能已删 */ }
+  }
+  return `你是${gm}，冷静、克制、营造氛围。用中文叙事，描写注重感官细节，让玩家做选择，不要替玩家做决定。`;
+}
+
 // —— 人格包（B5，§3.6：预设 6 档 + 玩家自建 + 战役绑定）——
 const PERSONAS_PATH = process.env.DK_E2E
   ? join(app.getPath('temp'), `dk-e2e-personas-${Date.now()}.json`)
@@ -181,7 +195,8 @@ function resolvePersona(campaignId: string | null): string {
   }
   if (!id) id = loadSettings().defaultPersonaId ?? null;
   const p = id ? findPersona(PRESET_PERSONAS, customPersonas, id) : null;
-  return p ? renderPersona(p) : DEFAULT_PERSONA;
+  // 无自定义人格 → 按战役规则包的 gm_title 生成默认人格（不同规则包主持人叫法不同）
+  return p ? renderPersona(p) : defaultPersonaFor(campaignId);
 }
 
 function makeProvider(cfg: { baseUrl: string; apiKey: string; model: string }): Provider {
@@ -750,6 +765,7 @@ ipcMain.handle('characters:fields', (_e, rulePackId?: string) => {
     skills: rp.character_sheet.skills.map((s) => ({ name: s.name, base: s.base, desc: COC_SKILL_DESC[s.name] ?? GENERIC_DESC, action: s.action ?? 'check' })),
     derived: rp.character_sheet.derived.map((name) => ({ name, desc: COC_DERIVED_DESC[name] ?? GENERIC_DESC })),
     occupations: (rp.chargen?.occupations ?? []).map((o) => o.name),
+    gmTitle: gmTitleOf(rp), // 主持人称谓（不同规则包叫法不同：守密人/地下城主/主持人…）
   };
 });
 // 手填后实时算衍生（不落库；幸运含随机，可重掷）
@@ -1037,8 +1053,9 @@ async function runPlayerTurn(action: string, aiAction?: string, source?: string)
 
 // 离线兜底叙事：检定场景给出基于结果的本地剧情推进（避免"未配置 AI 服务"误导成功能失效）
 function fallbackNarrative(action: string, provider: Provider, raw: string): string {
+  const gm = gmTitleOf(currentRulePack());
   if (!(provider instanceof MockProvider)) {
-    return `（守密人暂时无法响应：AI 服务出错。${raw}）\n你感到海雾裹住了整座酒馆，只能听见自己的心跳。`;
+    return `（${gm}暂时无法响应：AI 服务出错。${raw}）\n你感到海雾裹住了整座酒馆，只能听见自己的心跳。`;
   }
   const m = /【检定】(.+?)：(.+?)（骰面 (\d+)/.exec(action);
   if (m) {
@@ -1051,10 +1068,10 @@ function fallbackNarrative(action: string, provider: Provider, raw: string): str
       return map[s] ?? `尝试${s}`;
     };
     return success
-      ? `你${desc(skill)}，${label}（骰面 ${roll}）。\n\n（离线模式：本地判定已生效。配置 AI 服务后，守密人会基于这个结果展开完整剧情。）`
-      : `你${desc(skill)}，${label}（骰面 ${roll}），一无所获，空气中只剩下凝滞的寂静。\n\n（离线模式：本地判定已生效。配置 AI 服务后，守密人会基于这个结果展开完整剧情。）`;
+      ? `你${desc(skill)}，${label}（骰面 ${roll}）。\n\n（离线模式：本地判定已生效。配置 AI 服务后，${gm}会基于这个结果展开完整剧情。）`
+      : `你${desc(skill)}，${label}（骰面 ${roll}），一无所获，空气中只剩下凝滞的寂静。\n\n（离线模式：本地判定已生效。配置 AI 服务后，${gm}会基于这个结果展开完整剧情。）`;
   }
-  return '（离线模式）守密人暂时无法响应：未配置 AI 服务。请点击左下角「设置」，填写接口地址与 API 密钥。\n你感到海雾裹住了整座酒馆，只能听见自己的心跳。';
+  return `（离线模式）${gm}暂时无法响应：未配置 AI 服务。请点击左下角「设置」，填写接口地址与 API 密钥。\n你感到海雾裹住了整座酒馆，只能听见自己的心跳。`;
 }
 
 // —— IPC：对话（AI 网关全链路）——
@@ -1090,7 +1107,7 @@ ipcMain.handle('check:withChat', async (_e, skill: string) => {
 【检定】${skill}：${a.label}（骰面 ${a.takenRoll}，技能值 ${value}）。掷骰记录ID: ${rec.id}
 ${a.detail}
 
-你（守密人）不需要复述检定过程或数值，直接描写检定结果带来的剧情发展：成功则推进事件/揭示线索，失败则描写代价、意外或悬而未决的后果。
+你（${gmTitleOf(currentRulePack())}）不需要复述检定过程或数值，直接描写检定结果带来的剧情发展：成功则推进事件/揭示线索，失败则描写代价、意外或悬而未决的后果。
 输出 JSON 时 dice_results 必须引用上面的记录ID（["${rec.id}"]），不要自己编造。`;
   const out = await runPlayerTurn(playerAction, aiAction);
 
@@ -1375,7 +1392,8 @@ chargen:
   occupations:
     - {name: 职业名, skills: [技能1, 技能2], points: "点数公式（如 EDU*2+INT*2）"}
 rules_reference: 规则文本（裁决时注入，用 | 块标量）
-skills 条目可带 action 声明按钮类型：check=检定（默认，d100 对比技能值）/ narrative=叙事行动（不掷骰，玩家点击作为行动发送，由守密人叙事推进）/ none=不显示按钮
+skills 条目可带 action 声明按钮类型：check=检定（默认，d100 对比技能值）/ narrative=叙事行动（不掷骰，玩家点击作为行动发送，由主持人叙事推进）/ none=不显示按钮
+gm_title: 本规则下主持人/GM 的称谓（如 守密人/地下城主/城主/主持人），UI 与 AI 人格按此称呼
 DSL 可用函数：floor/half/fifth/advantage/disadvantage/successes/min/max；骰子 d100/2d6 等；字段引用 SKILL 或属性名。
 格式约束：缩进两空格；list 项展开；全中文（技能/属性/职业名用中文）。`,
 };
@@ -1772,9 +1790,20 @@ function createWindow(): void {
           const f = await window.dk.characters.fields(c.meta.id);
           return JSON.stringify({ action: f.skills[0].action, count: f.skills.length });
         })`);
+        // 主持人称谓（规则包 gm_title）：保存 gm_title=地下城主 → fields 返回；内置 coc7e = 守密人
+        const r39 = await js(`window.dk.editor.create({ type: 'rule', name: 'E2E GM 称谓包' }).then(async (c) => {
+          if (!c.ok || !c.meta) return JSON.stringify({ create: false });
+          const opened = await window.dk.editor.open('rule', c.meta.id);
+          opened.obj.gm_title = '地下城主';
+          const saved = await window.dk.editor.save({ type: 'rule', id: c.meta.id, isBuiltin: false, obj: opened.obj });
+          if (!saved.ok) return JSON.stringify({ save: false, err: saved.error || '' });
+          const custom = await window.dk.characters.fields(c.meta.id);
+          const builtin = await window.dk.characters.fields('coc7e');
+          return JSON.stringify({ custom: custom.gmTitle, builtin: builtin.gmTitle });
+        })`);
         // 窗口标题带版本号（用户要求）：preventDefault 后 HTML title 不覆盖，标题 = DiceKeeper v<版本>
         const r38 = win.getTitle();
-        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 技能按钮类型=' + r37 + ' 窗口标题=' + r38 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
+        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 技能按钮类型=' + r37 + ' GM称谓=' + r39 + ' 窗口标题=' + r38 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
         console.log(line);
         try { writeFileSync(join(app.getPath('temp'), 'dk-e2e-result.txt'), line, 'utf-8'); } catch { /* 非关键 */ }
       } catch (e) {

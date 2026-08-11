@@ -144,6 +144,7 @@ export interface CharFields {
   skills: { name: string; base: number; desc: string; action: 'check' | 'narrative' | 'none' }[];
   derived: { name: string; desc: string }[];
   occupations: string[];
+  gmTitle: string; // 主持人称谓（规则包 gm_title：守密人/地下城主/主持人…）
 }
 
 export interface SessionData {

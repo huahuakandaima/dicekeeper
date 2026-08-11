@@ -20,6 +20,8 @@ export interface RulePack {
     skills: { name: string; base: number; category: string; action?: 'check' | 'narrative' | 'none' }[];
   };
   check_rules: Record<string, string>; // extreme/hard/normal/crit_fail 等，DSL 表达式
+  // GM/主持人的规则包称谓（"守密人"是 CoC 的；D&D 用"地下城主/DM"等）——UI 与默认人格按此显示，缺省"守密人"
+  gm_title?: string;
   modifiers?: { name: string; condition?: string }[];
   chargen?: {
     attribute_methods?: { name: string; formula: string; fields: string[] }[];
@@ -207,6 +209,8 @@ export function validateRulePack(raw: Record<string, unknown>): RulePack {
   const cs = raw.character_sheet as Record<string, unknown> | undefined;
   if (!cs || typeof cs !== 'object') err('规则包缺少 character_sheet');
   if (!Array.isArray(cs.attributes) || (cs.attributes as unknown[]).length === 0) err('character_sheet.attributes 必须是非空数组');
+  // gm_title（主持人称谓）可选，但必须是字符串
+  if (raw.gm_title !== undefined && (typeof raw.gm_title !== 'string' || !raw.gm_title.trim())) err('gm_title 必须是字符串');
   // 技能按钮类型校验（action：check/narrative/none，缺省 check）
   if (Array.isArray(cs.skills)) {
     for (const s of cs.skills as Record<string, unknown>[]) {
