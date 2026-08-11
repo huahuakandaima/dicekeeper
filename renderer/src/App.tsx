@@ -525,6 +525,9 @@ export function App() {
   async function openCampaign(id: string) {
     setCampaignId(id);
     await window.dk.campaign.open(id); // 关键：绑定主进程"当前战役"（漏了它 → session:start/chat:send 全报未打开战役）
+    // 按当前战役刷新剧本包（开场白用 hooks[0]；曾只在挂载时取一次=内置雾港，选自定义剧本包开场仍默认）
+    const info = await window.dk.scenario.info();
+    setScenario(info);
     const chars = await window.dk.campaign.characters(id);
     setChar(chars[0] ?? null);
     // 反馈修复：重开战役恢复最近会话的聊天历史（不再每次新建空会话丢记录）
@@ -546,10 +549,11 @@ export function App() {
     // 无历史 → 新会话 + 剧本开场白
     const s = await window.dk.session.start();
     await window.dk.session.open(s.id);
-    // 开场白：内置剧本包的 hooks（P2）；旧战役（无剧本包）回退硬编码开场
+    // 开场白：战役剧本包的 hooks（P2）；旧战役（无剧本包）回退硬编码开场
     const meta = (await window.dk.campaign.list()).find((c) => c.id === id);
-    const opening = meta?.scenarioPackId && scenario
-      ? `${scenario.hooks[0]}\n——冒险开始了。`
+    // 用局部 info 而非 scenario state（setScenario 异步，同函数内闭包仍是旧值=内置雾港）
+    const opening = meta?.scenarioPackId && info
+      ? `${info.hooks[0]}\n——冒险开始了。`
       : `雾港的钟声敲了三下。你（${chars[0]?.name ?? '无名调查员'}）推开酒馆的门，海盐与烟味扑面而来。老船长埃德加坐在角落，抬眼看向你。\n——冒险开始了。`;
     setMsgs([{ role: 'keeper', text: opening }]);
     refreshAudit();

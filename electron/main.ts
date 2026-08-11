@@ -1114,11 +1114,17 @@ ${a.detail}
 });
 
 // —— IPC：剧本包 ——
-ipcMain.handle('scenario:info', () => ({
-  id: scenario.id,
-  name: scenario.name,
-  hooks: scenario.hooks,
-}));
+// 按当前战役的剧本包返回（修复：曾硬编码内置雾港——选自定义剧本包建团后开场白仍是默认剧情第一句）
+ipcMain.handle('scenario:info', () => {
+  if (activeCampaignId) {
+    const c = store.loadCampaign(activeCampaignId);
+    if (c.scenarioPackId) {
+      const sc = loadScenarioById(c.scenarioPackId);
+      if (sc) return { id: sc.id, name: sc.name, hooks: sc.hooks };
+    }
+  }
+  return { id: scenario.id, name: scenario.name, hooks: scenario.hooks };
+});
 ipcMain.handle('scenario:list', () => listScenarioPacks());
 
 // —— IPC：内容包（P3a，§3.7 Foundry 范式）——
@@ -1723,11 +1729,19 @@ function createWindow(): void {
         // 曾因模板缺 chargen 段抛错且前端静默失败保留默认卡；现断言属性名跟模板包（STR/...≠默认中文属性）
         const r34 = await js(`window.dk.editor.create({ type: 'rule', name: 'E2E 规则包' }).then(async (c) => {
           if (!c.ok || !c.meta) return JSON.stringify({ create: false, err: c.error || 'create-failed' });
-          const opened = await window.dk.editor.open('rule', c.meta.id).then(o => o.ok ? 'open-ok' : ('open-fail:' + (o.error || ''))).catch(() => 'open-err');
           const p = await window.dk.characters.preview('e2e-rp', false, c.meta.id);
-          return JSON.stringify({ create: c.ok, id: c.meta.id, opened, occ: p.occupation, attrs: Object.keys(p.attributes).join(','), derived: Object.keys(p.derived).join(',') });
+          return JSON.stringify({ create: c.ok, attrs: Object.keys(p.attributes).join(','), derived: Object.keys(p.derived).join(',') });
         })`);
-        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
+        // 剧本包开场回归（2026-08-11 修复）：scenario.info 按当前战役剧本包返回（曾硬编码内置雾港，
+        // 选自定义剧本包建团后开场白仍是默认剧情第一句）。导入雾港副本换 id → 建团 → info.id 应变副本 id
+        const r35 = await js(`window.dk.editor.open('scenario', 'fog_harbor').then(async (r) => {
+          const imp = await window.dk.packs.importText(r.yaml, { force: true, newId: 'fog_harbor_e2e' });
+          if (!imp.ok) return JSON.stringify({ imported: false });
+          const c = await window.dk.campaign.create({ name: 'E2E 剧本包战役', seed: 'scen-e2e', scenarioPackId: 'fog_harbor_e2e' });
+          const info = await window.dk.scenario.info();
+          return JSON.stringify({ imported: true, id: info.id, name: info.name, hook: String(info.hooks[0]).slice(0, 10) });
+        })`);
+        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
         console.log(line);
         try { writeFileSync(join(app.getPath('temp'), 'dk-e2e-result.txt'), line, 'utf-8'); } catch { /* 非关键 */ }
       } catch (e) {
