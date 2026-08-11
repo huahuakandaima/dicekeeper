@@ -674,7 +674,7 @@ export function App() {
           <h1>🎲 DiceKeeper</h1>
           <p className="sub">AI 守密人跑团</p>
           {!sqliteOk && <p className="warn">⚠ SQLite 不可用（需 --experimental-sqlite）</p>}
-          <button className="primary" onClick={() => setShowNew(true)}>＋ 新建战役</button>
+          <button className="primary" onClick={() => { setShowNew(true); void rerollPreview(); }}>＋ 新建战役</button>
         <div className="campaign-list">
           {campaigns.map((c) => (
             <div key={c.id} className={c.id === campaignId ? 'campaign-row active' : 'campaign-row'}>
@@ -1048,7 +1048,7 @@ export function App() {
             )}
             <div className="chargen-box">
               <div className="chargen-mode">
-                <button className={`ghost ${!editMode ? 'active' : ''}`} onClick={() => { setEditMode(false); setEditModal(null); }}>🎲 随机</button>
+                <button className={`ghost ${!editMode ? 'active' : ''}`} onClick={() => { setEditMode(false); setEditModal(null); void rerollPreview(); }}>🎲 随机</button>
                 <button className={`ghost ${editMode ? 'active' : ''}`} onClick={() => { setEditMode(true); openCharEdit('new'); }}>✏️ 手动编辑</button>
               </div>
               {!editMode ? (
