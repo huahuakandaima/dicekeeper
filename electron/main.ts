@@ -1348,6 +1348,8 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
       target === 'adjust' && req?.prevDraft ? `现有草稿：\n${req.prevDraft}` : null,
     ].filter(Boolean).join('\n\n');
     // AI 输出不可控：清洗 + 智能解析（YAML/JSON 都支持）+ 解析失败自动重试 1 次
+    // 关键：不传 maxTokens——实测 deepseek-v4-flash（或其中转）对 max_tokens 参数返回空 content（200 但内容空）；
+    // 正常聊天（chat.ts）不传 maxTokens 一直正常。宁可输出截断（可部分解析）也不要空返回。
     let raw: Record<string, unknown> | null = null;
     let rawText = '';
     let parseErr: Error | null = null;
@@ -1359,8 +1361,7 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
           { role: 'user', content: userParts + (attempt > 0 ? '\n\n（提示：上次输出为空或无法解析，请严格两空格缩进输出纯 YAML（或 JSON 对象），不要任何解释文字、不要 markdown 代码块标记）' : '') },
         ],
         [],
-        // 上次空内容 → 重试降 maxTokens（部分模型/中转对高 max_tokens 返回空）；格式错误 → 保持 5000 防截断
-        { temperature: 0.7, maxTokens: attempt === 0 ? 5000 : lastEmpty ? 2000 : 5000 },
+        { temperature: 0.7 },
       );
       const content = String(res.content ?? '');
       lastEmpty = content.trim() === '';
@@ -1372,7 +1373,7 @@ ipcMain.handle('editor:aiGenerate', async (_e, req: { type?: string; prompt?: st
       }
       parseErr = new Error(
         lastEmpty
-          ? 'AI 服务返回了空内容（可能是模型对超长输出支持不佳、临时限流或接口异常），建议稍后重试'
+          ? 'AI 服务返回了空内容（模型/接口对生成类请求返回空，可尝试更换模型或检查接口配置），建议稍后重试'
           : `输出无法解析为 YAML/JSON。AI 原文开头：${JSON.stringify(content.slice(0, 150))}…`,
       );
     }
