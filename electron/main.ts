@@ -1545,10 +1545,11 @@ function setupMenu(): void {
 
 // —— 窗口 ——
 function createWindow(): void {
+  // 标题带版本号（用户要求：开发端/发布端都显示）——app.getVersion() 开发端=本地 package.json，发布端=打包版本
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: 'DiceKeeper — AI 守密人跑团',
+    title: `DiceKeeper v${app.getVersion()} — AI 守密人跑团`,
     backgroundColor: '#f5f0e8',
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
@@ -1558,6 +1559,8 @@ function createWindow(): void {
     },
   });
   mainWindow = win;
+  // index.html 的 <title> 会覆盖窗口标题（Electron 默认跟随页面标题）——阻止，保证标题带版本号
+  win.on('page-title-updated', (e) => e.preventDefault());
   win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
   const rendererIndex = join(__dirname, '..', 'renderer', 'index.html');
   if (existsSync(rendererIndex)) win.loadFile(rendererIndex);
@@ -1769,7 +1772,9 @@ function createWindow(): void {
           const f = await window.dk.characters.fields(c.meta.id);
           return JSON.stringify({ action: f.skills[0].action, count: f.skills.length });
         })`);
-        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 技能按钮类型=' + r37 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
+        // 窗口标题带版本号（用户要求）：preventDefault 后 HTML title 不覆盖，标题 = DiceKeeper v<版本>
+        const r38 = win.getTitle();
+        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 技能按钮类型=' + r37 + ' 窗口标题=' + r38 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
         console.log(line);
         try { writeFileSync(join(app.getPath('temp'), 'dk-e2e-result.txt'), line, 'utf-8'); } catch { /* 非关键 */ }
       } catch (e) {
