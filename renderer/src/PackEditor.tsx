@@ -155,7 +155,7 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
   // AI 生成（§11.8：整包或单点，产出草稿人工确认）；规则包只有「整包骨架」目标，初始值按类型对齐（修复误选 pack 报错）
   const [aiTarget, setAiTarget] = useState(type === 'scenario' ? 'pack' : 'rule-pack');
   const [aiBusy, setAiBusy] = useState(false);
-  const [aiDraft, setAiDraft] = useState<{ target: string; field?: string; yaml: string } | null>(null); // 草稿（人工确认后应用）
+  const [aiDraft, setAiDraft] = useState<{ target: string; field?: string; yaml: string; obj?: Record<string, unknown> } | null>(null); // 草稿（obj=后端校验过的完整对象，应用时直接使用）
   // 按规则包生成剧本包：规则包列表选择（P3b 增强：注入所选规则包技能/属性体系）
   const [rulePacks, setRulePacks] = useState<PackMeta[]>([]);
   const [rulePackId, setRulePackId] = useState('');
@@ -248,7 +248,7 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
     });
     setAiBusy(false);
     if (r.ok) {
-      setAiDraft({ target: r.target ?? aiTarget, field: r.field, yaml: r.yaml ?? '' });
+      setAiDraft({ target: r.target ?? aiTarget, field: r.field, yaml: r.yaml ?? '', obj: (r.draft as Record<string, unknown> | undefined) ?? undefined });
       setMsg({ kind: 'ok', text: r.isWhole ? '✓ AI 已生成整包草稿，可继续「按意见修改」或直接应用到表单' : `✓ AI 已生成「${targetLabel(r.target ?? aiTarget)}」草稿` });
     } else {
       setMsg({ kind: 'err', text: r.error ?? 'AI 生成失败' });
@@ -263,7 +263,7 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
     const r = await window.dk.editor.aiGenerate({ type, prompt: text, target: 'adjust', prevDraft: aiDraft.yaml });
     setAiBusy(false);
     if (r.ok) {
-      setAiDraft({ target: 'adjust', field: undefined, yaml: r.yaml ?? '' });
+      setAiDraft({ target: 'adjust', field: undefined, yaml: r.yaml ?? '', obj: (r.draft as Record<string, unknown> | undefined) ?? undefined });
       setAdjustPrompt('');
       setMsg({ kind: 'ok', text: '✓ 已按你的意见修改草稿，检查后「应用到表单」' });
     } else {
@@ -271,28 +271,34 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
     }
   }
   // 草稿 → 表单（整包替换 / 单点合并进对应字段）
+  // 用后端返回的 draft 对象（已完整校验），避免二次 parseYaml 引入解析差异
   function applyAiDraft() {
     if (!aiDraft || !obj) return;
     if (!aiDraft.field) {
-      // 整包：需要 obj（parsePackObject 已校验），直接替换
-      window.dk.editor.open(type, meta.id).then(() => {}); // 触发重新加载（保持简单：从草稿 yaml 解析）
-      try {
-        const parsed = parseYaml(aiDraft.yaml) as Record<string, unknown>;
-        setObj(parsed);
-        setSrcText(serializeYaml(parsed));
-      } catch (e) {
-        setMsg({ kind: 'err', text: `草稿解析失败：${(e as Error).message}` });
-        return;
+      // 整包：直接应用后端校验过的 draft 对象
+      if (aiDraft.obj) {
+        setObj(aiDraft.obj);
+        setSrcText(serializeYaml(aiDraft.obj));
+      } else {
+        try {
+          const parsed = parseYaml(aiDraft.yaml) as Record<string, unknown>;
+          setObj(parsed);
+          setSrcText(serializeYaml(parsed));
+        } catch (e) {
+          setMsg({ kind: 'err', text: `草稿解析失败：${(e as Error).message}` });
+          return;
+        }
       }
     } else {
-      try {
-        const parsed = parseYaml(aiDraft.yaml) as Record<string, unknown>;
-        setObj({ ...obj, [aiDraft.field]: parsed[aiDraft.field] });
-        setSrcText(serializeYaml({ ...obj, [aiDraft.field]: parsed[aiDraft.field] }));
-      } catch (e) {
-        setMsg({ kind: 'err', text: `草稿解析失败：${(e as Error).message}` });
-        return;
-      }
+      const fieldVal = aiDraft.obj?.[aiDraft.field] ?? (() => {
+        try {
+          return (parseYaml(aiDraft.yaml) as Record<string, unknown>)[aiDraft.field];
+        } catch {
+          return undefined;
+        }
+      })();
+      setObj({ ...obj, [aiDraft.field]: fieldVal });
+      setSrcText(serializeYaml({ ...obj, [aiDraft.field]: fieldVal }));
     }
     setAiDraft(null);
     setTab('form');
