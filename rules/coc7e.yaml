@@ -1,0 +1,100 @@
+# CoC 7e 规则包（DiceKeeper 内置样例 v1）
+# 数值与检定公式依据《克苏鲁的呼唤》第七版，衍生公式与年龄修正参考开源车卡项目 SLMT/coc7-character-generator 与 masquevil/trpg-saikou
+
+id: coc7e
+name: 克苏鲁的呼唤 7 版
+version: 1.0
+dice_schema: d100
+
+character_sheet:
+  attributes: [STR, CON, DEX, APP, INT, POW, EDU, SIZ]
+  derived: [HP, MP, SAN, 幸运, DB, Build, MOV]
+  skills:
+    - {name: 会计, base: 5, category: 调查}
+    - {name: 人类学, base: 1, category: 调查}
+    - {name: 估价, base: 5, category: 调查}
+    - {name: 考古学, base: 1, category: 调查}
+    - {name: 魅惑, base: 15, category: 社交}
+    - {name: 攀爬, base: 20, category: 体能}
+    - {name: 计算机使用, base: 5, category: 调查}
+    - {name: 信用评级, base: 0, category: 社交}
+    - {name: 克苏鲁神话, base: 0, category: 知识}
+    - {name: 乔装, base: 5, category: 社交}
+    - {name: 闪避, base: 0, category: 体能}
+    - {name: 汽车驾驶, base: 20, category: 体能}
+    - {name: 电器维修, base: 10, category: 体能}
+    - {name: 电子学, base: 1, category: 调查}
+    - {name: 话术, base: 5, category: 社交}
+    - {name: 格斗, base: 25, category: 战斗}
+    - {name: 手枪, base: 20, category: 战斗}
+    - {name: 步枪/霰弹枪, base: 25, category: 战斗}
+    - {name: 急救, base: 30, category: 调查}
+    - {name: 历史, base: 5, category: 知识}
+    - {name: 威吓, base: 15, category: 社交}
+    - {name: 跳跃, base: 20, category: 体能}
+    - {name: 其他语言, base: 1, category: 知识}
+    - {name: 母语, base: 0, category: 知识}
+    - {name: 法律, base: 5, category: 知识}
+    - {name: 图书馆使用, base: 20, category: 调查}
+    - {name: 聆听, base: 20, category: 调查}
+    - {name: 锁匠, base: 1, category: 调查}
+    - {name: 机械维修, base: 10, category: 体能}
+    - {name: 医学, base: 1, category: 调查}
+    - {name: 自然学, base: 10, category: 知识}
+    - {name: 导航, base: 10, category: 调查}
+    - {name: 神秘学, base: 5, category: 知识}
+    - {name: 操作重型机械, base: 1, category: 体能}
+    - {name: 说服, base: 10, category: 社交}
+    - {name: 心理分析, base: 1, category: 调查}
+    - {name: 心理学, base: 10, category: 调查}
+    - {name: 生物科学, base: 1, category: 知识}
+    - {name: 侦查, base: 25, category: 调查}
+    - {name: 潜行, base: 20, category: 体能}
+    - {name: 游泳, base: 20, category: 体能}
+    - {name: 摄影, base: 5, category: 调查}
+    - {name: 投掷, base: 20, category: 战斗}
+    - {name: 追踪, base: 10, category: 调查}
+
+# 检定五档：极限成功 → 困难成功 → 普通成功 → 大失败 → 失败
+# 判定引擎按此顺序级联执行（见 adjudicate.ts）
+check_rules:
+  extreme: "d100 <= fifth(SKILL)"
+  hard: "d100 <= half(SKILL)"
+  normal: "d100 <= SKILL"
+  crit_fail: "d100 >= 96"
+
+modifiers:
+  - {name: 极限成功, condition: "d100 <= fifth(SKILL)"}
+  - {name: 困难成功, condition: "d100 <= half(SKILL)"}
+  - {name: 普通成功, condition: "d100 <= SKILL"}
+  - {name: 大失败, condition: "d100 >= 96"}
+  # 奖励骰/惩罚骰由规则文本描述，检定表达式用 min/max 表达：
+  # 奖励骰: min(d100, d100) <= SKILL | 惩罚骰: max(d100, d100) <= SKILL
+
+chargen:
+  attribute_methods:
+    - {name: 常规属性, formula: "3d6*5", fields: [STR, CON, DEX, APP, POW]}
+    - {name: 非常规属性, formula: "(2d6+6)*5", fields: [SIZ, INT, EDU]}
+  derived_formulas:
+    HP: "(SIZ+CON)/10"
+    MP: "POW/5"
+    SAN: "POW"
+    幸运: "3d6*5"
+  age_adjustments:
+    - {min: 15, max: 19, note: "STR+SIZ 各 -5，EDU -5，幸运两次取高"}
+    - {min: 20, max: 39, note: "无调整"}
+    - {min: 40, max: 49, note: "STR/CON/DEX -5，INT/APP +5，教育成长 1 次"}
+    - {min: 50, max: 59, note: "STR/CON/DEX -10，INT/APP +10，教育成长 2 次"}
+    - {min: 60, max: 69, note: "STR/CON/DEX -15，INT/APP +15，教育成长 3 次"}
+    - {min: 70, max: 89, note: "STR/CON/DEX -20，INT/APP +20，教育成长 4 次"}
+  occupations:
+    - {name: 医生, skills: [医学, 急救, 心理学, 生物科学, 图书馆使用, 侦查, 母语, 其他语言], points: "EDU*2+INT*2"}
+    - {name: 记者, skills: [话术, 图书馆使用, 母语, 说服, 心理学, 侦查, 乔装, 摄影], points: "EDU*2+INT*2"}
+    - {name: 私家侦探, skills: [话术, 法律, 图书馆使用, 心理学, 侦查, 潜行, 格斗, 手枪], points: "EDU*2+INT*2"}
+    - {name: 教授, skills: [图书馆使用, 母语, 其他语言, 心理学, 神秘学, 说服, 侦查, 估价], points: "EDU*4"}
+
+rules_reference: |
+  CoC 7e 核心：属性由 3d6*5 / (2d6+6)*5 生成（0-99）；技能检定 d100 对比技能值，数值越低越好。
+  成功档位：极限成功(≤1/5) > 困难成功(≤1/2) > 普通成功(≤技能值) > 失败；掷出 96-100 为大失败（若技能值<50，96+ 失败；技能值≥50 时 100 才必败）。
+  奖励骰：掷两个 d100 取十位更小的结果；惩罚骰取十位更大的结果。本框架用 min/max 近似表达。
+  战斗：伤害检定、闪避检定、SAN 检定均走同一 d100 对比体系。

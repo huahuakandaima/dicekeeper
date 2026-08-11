@@ -1,0 +1,259 @@
+# 雾港疑云 —— DiceKeeper 内置剧本包（克苏鲁悬疑 · CoC 7e 入门模组）
+# 时间：1925 年 10 月 17 日；地点：美国东岸渔镇雾港（虚构）
+# 核心冲突：雾潮之夜（10 月 31 日）将至，圣烛会准备以 7 名失踪者为祭品
+# 结构：world（常驻世界观）/ npc_seeds（种子不是成品）/ locations / plot_threads（线索网络）/ encounters / hooks / lore_entries（世界书）
+
+id: fog_harbor
+name: 雾港疑云
+version: 1.0
+requires: coc7e
+
+world:
+  summary: |
+    雾港镇坐落在美国东岸一处常年起雾的海湾里，四百多户人家，靠捕鱼和修船为生。
+    1925 年 10 月，雾季比往年提前了三周。雾一起，镇子就像被泡进牛奶里。
+    过去三周，七名渔民先后失踪，活不见人死不见尸。警长说是海上事故，但渔市码头
+    每天凌晨仍有人声称在雾里看见过黑影——那些影子比人高，肩膀很宽，走路像鱼。
+  cosmology: |
+    海湾深处住着古老的「雾潮之民」：灰绿色的皮肤，鳃裂从耳后一直开到锁骨，
+    眼睛像死鱼一样没有瞳仁。它们每三十年乘着最浓的雾潮上岸一次，带走祭品，
+    换取渔汛与风平浪静。传说流传了几代人，多数镇民只当它是水手的胡话。
+  factions:
+    - {name: 圣烛会, stance: "表面是慈善互助会，实为雾潮之民的献祭教团，会长梅布尔主持一切"}
+    - {name: 镇公所, stance: "警长霍勒斯收受贿赂，把失踪案压成'海上事故'，不愿节外生枝"}
+
+npc_seeds:
+  - name: 埃德加·克莱恩
+    aliases: [老船长, 埃德加船长, 克莱恩]
+    traits: "六十三岁，皮肤像晒干的海带，倔强，嗜酒，欠码头赌债"
+    secrets: "1895 年白雾之夜他就在鹈鹕号上，亲眼见过雾潮之民，靠装死逃过一劫；失踪的七人里有三个是他的船员"
+    relation_hint: "与失踪案直接相关，知道 1895 年真相"
+  - name: 马修·格雷
+    aliases: [马修, 码头工头]
+    traits: "四十岁，膀大腰圆，讲义气，最近魂不守舍"
+    secrets: "弟弟三周前失踪；他偷听到圣烛会深夜集会，发现女儿的名字被写在名单上"
+    relation_hint: "失踪者家属，圣烛会内幕的目击者"
+  - name: 霍勒斯·温特
+    aliases: [警长, 温特]
+    traits: "五十岁，啤酒肚，圆滑，和稀泥"
+    secrets: "收了圣烛会的钱，把三起失踪按'海上事故'结案，其余的压着不办"
+    relation_hint: "失踪案表面负责人，腐败的中间人"
+  - name: 梅布尔·霍尔特
+    aliases: [梅布尔, 霍尔特夫人, 会长]
+    traits: "六十岁，慈眉善目的寡妇，镇上人人都受过她帮助"
+    secrets: "圣烛会真正的主事人，主持献祭仪式，名单由她亲笔拟定"
+    relation_hint: "教团核心，最大的伪善者"
+  - name: 亚瑟·芬利
+    aliases: [芬利医生, 医生]
+    traits: "三十八岁，戴金丝眼镜，理性，好奇心重"
+    secrets: "私下整理了失踪者档案，发现七人都在失踪前一个月的体检中被做过记号（腋下三道细疤）"
+    relation_hint: "可信赖的盟友，线索的提供者"
+  - name: 莉迪亚·莫罗
+    aliases: [莉迪亚, 女画家]
+    traits: "二十八岁，外地来的风景画家，安静，观察力惊人"
+    secrets: "她的父亲正是 1895 年白雾之夜失踪的人，她回来查真相，已暗中画下圣烛会的夜间集会"
+    relation_hint: "1895 年遗属，双重线索源"
+  - name: 多丽丝·韦斯特
+    aliases: [多丽丝, 老板娘]
+    traits: "四十五岁，雾港酒馆老板娘，泼辣，消息灵通，胆子小"
+    secrets: "知道警长受贿；见过梅布尔深夜提灯去北角灯塔，不敢声张"
+    relation_hint: "镇上的消息集散地，可争取的知情人"
+
+locations:
+  - name: 雾港酒馆
+    aliases: [酒馆, 码头酒馆]
+    state: "营业中，雾气天生意反而好"
+    secrets: "地下室酒窖墙上有一片 1895 年的旧刻痕，被酒桶挡住，形似潮汐符文"
+  - name: 北角灯塔
+    aliases: [灯塔, 北角]
+    state: "废弃五年，门锁锈死，塔顶灯早已不亮"
+    secrets: "地下室地面有干涸的暗色痕迹，中央立着一块潮汐石祭坛，刻着与符文相同的纹路"
+  - name: 圣烛堂
+    aliases: [圣烛堂, 会堂, 老教堂]
+    state: "每周三晚聚会点蜡烛，平时大门紧闭"
+    secrets: "祭坛地板下有暗格，藏着历年来历次献祭的名单与骨灰罐"
+  - name: 鹈鹕号
+    aliases: [鹈鹕号, 埃德加的船]
+    state: "搁在干船坞大修，船主最近不敢出海"
+    secrets: "底舱暗格里藏着 1895 年的航海日志，最后一页记着'它们上来了'"
+  - name: 渔市码头
+    aliases: [码头, 渔市]
+    state: "凌晨四点开市，雾最浓时无人敢靠近尽头"
+    secrets: "尽头最后一根木桩水面以下刻着一串潮汐符文，是雾潮之民登岸的标记"
+  - name: 芬利诊所
+    aliases: [诊所, 医生诊所]
+    state: "镇上唯一的诊所，档案柜上锁"
+    secrets: "失踪者档案被医生另抄了一份副本，含体检记录与记号描述"
+
+plot_threads:
+  - {id: t1, name: 失踪案调查, status: open, branches: ["查失踪者共同点", "找目击者", "追查警长压案"]}
+  - {id: t2, name: 圣烛会的秘密, status: open, branches: ["混入周三集会", "查会堂档案", "盯梢梅布尔"]}
+  - {id: t3, name: 白雾之夜, status: open, branches: ["找 1895 年幸存者", "读鹈鹕号航海日志", "问莉迪亚往事"]}
+  - {id: t4, name: 雾潮之夜倒计时, status: open, branches: ["阻止献祭", "破坏祭坛", "疏散祭品"]}
+
+encounters:
+  - {name: 码头盘问, type: social, skill: 话术, note: "失踪者家属与码头工人都守口如瓶"}
+  - {name: 酒馆打听, type: social, skill: 心理学, note: "多丽丝知道最多，但她怕惹祸"}
+  - {name: 灯塔守夜, type: exploration, skill: 侦查, note: "雾夜塔内有响动"}
+  - {name: 地下室搜查, type: exploration, skill: 图书馆使用, note: "圣烛堂与灯塔各有一处"}
+  - {name: 雾中遭遇, type: combat, skill: 潜行, note: "雾潮之夜前夕，码头尽头不再安全"}
+
+hooks:
+  - "十月十七日，黄昏。雾像潮水一样漫过雾港镇的屋顶。你推开雾港酒馆的门，咸腥的雾气裹着烟味涌出来。角落里的老船长埃德加灌了一大口酒，用所有人都听得见的嗓门说：'那雾里有东西，比鱼更老。'"
+  - "渔市码头的木桩上钉着七张寻人启事，纸角被海风吹得哗哗响。船工们蹲在栈桥上抽烟，没人说话。一个妇女在码头尽头烧纸钱，火光照着雾，忽明忽暗。"
+  - "雾港酒馆的窗边坐着个陌生女人，面前摊着未完成的油画——画的是北角灯塔。她注意到你的目光，微微点头，又低头继续画。老板娘多丽丝擦着杯子，轻声说：'外地人，来了三天，天天画灯塔。'"
+
+lore_entries:
+  - id: l_blue_town
+    key_terms: [雾港镇, 雾季]
+    activation: blue
+    token_budget: 260
+    priority: 100
+    content: |
+      雾港镇：东岸渔镇，四百余户，渔业与修船为生。1925 年 10 月雾季提前三周，
+      大雾每天傍晚从海上漫进镇子，清晨才散。过去三周七名渔民失踪，警长以海上
+      事故结案。镇民私下流传雾里有"比人高的黑影"，多数人宁可信其无。
+  - id: l_blue_cult
+    key_terms: [圣烛会, 雾潮之民]
+    activation: blue
+    token_budget: 300
+    priority: 90
+    content: |
+      圣烛会：以慈善互助为名的镇内教团，会长梅布尔·霍尔特，每周三晚在圣烛堂
+      点烛聚会。其真实面目是崇拜「雾潮之民」的献祭教团——海湾深处的古老存在，
+      灰绿皮肤、鳃裂、无瞳仁的鱼眼，每三十年乘浓雾登岸一次，带走祭品换取渔汛。
+      会众相信这是与大海的古老契约，多数人不知献祭是杀人。
+  - id: l_blue_cycle
+    key_terms: [雾潮之夜, 祭品, 三十年]
+    activation: blue
+    token_budget: 220
+    priority: 80
+    content: |
+      雾潮之夜：每三十年一次，10 月 31 日，浓雾达到顶峰之夜。雾潮之民在渔市码头
+      尽头登岸，收取七名祭品。上一次是 1895 年，镇人称「白雾之夜」——七人失踪，
+      一艘渔船倾覆。今年的雾潮之夜在十四天后。祭品由圣烛会名单指定，以潮汐符文
+      标记于腋下。
+  - id: l_npc_edgar
+    key_terms: [埃德加, 老船长, 克莱恩]
+    activation: green
+    token_budget: 120
+    priority: 60
+    content: |
+      埃德加·克莱恩：六十三岁老船长，鹈鹕号船主，嗜酒、倔强、欠赌债。
+      失踪的七人里有三个是他的船员。他对三十年前的海难讳莫如深，喝醉时会
+      念叨"它们上来了"。
+  - id: l_npc_matthew
+    key_terms: [马修, 码头工头, 格雷]
+    activation: green
+    token_budget: 110
+    priority: 60
+    content: |
+      马修·格雷：码头工头，壮实、讲义气。弟弟三周前失踪，他最近魂不守舍，
+      回避所有人的追问，偶尔半夜独自在码头来回走。
+  - id: l_npc_horace
+    key_terms: [霍勒斯, 警长, 温特]
+    activation: green
+    token_budget: 100
+    priority: 60
+    content: |
+      霍勒斯·温特：警长，五十岁，圆滑世故。以"海上事故"结了三起失踪案，
+      其余压着不办，对追问不耐烦，话里话外劝人"别管闲事"。
+  - id: l_npc_mabel
+    key_terms: [梅布尔, 霍尔特夫人, 会长]
+    activation: green
+    token_budget: 120
+    priority: 60
+    content: |
+      梅布尔·霍尔特：圣烛会会长，六十岁慈祥寡妇，镇上声望极高，谁家有事
+      她都帮衬。每周三晚在圣烛堂主持聚会，待人温和，滴水不漏。
+  - id: l_npc_arthur
+    key_terms: [亚瑟, 芬利医生, 医生]
+    activation: green
+    token_budget: 110
+    priority: 60
+    content: |
+      亚瑟·芬利：镇医生，三十八岁，理性冷静。他注意到失踪者体检记录里的
+      异常，私下保留了一份档案副本，正犹豫要不要说出去。
+  - id: l_npc_lydia
+    key_terms: [莉迪亚, 女画家, 莫罗]
+    activation: green
+    token_budget: 110
+    priority: 60
+    content: |
+      莉迪亚·莫罗：外地来的风景画家，住在酒馆，天天画北角灯塔。安静、观察
+      力强，对镇上的传说表现出异常的熟悉。
+  - id: l_npc_doris
+    key_terms: [多丽丝, 老板娘]
+    activation: green
+    token_budget: 100
+    priority: 60
+    content: |
+      多丽丝·韦斯特：雾港酒馆老板娘，泼辣能干，镇上所有流言的集散地。
+      她消息最灵通，但胆子小，话只说三分，深怕惹祸上身。
+  - id: l_loc_tavern
+    key_terms: [雾港酒馆, 酒馆]
+    activation: green
+    token_budget: 90
+    priority: 50
+    content: |
+      雾港酒馆：镇中心唯一的酒馆，渔民们傍晚聚在这里喝酒。地下酒窖堆满酒桶，
+      老板偶尔会提起"这房子比镇子还老"。
+  - id: l_loc_lighthouse
+    key_terms: [北角灯塔, 灯塔]
+    activation: green
+    token_budget: 100
+    priority: 50
+    content: |
+      北角灯塔：废弃五年，孤悬在镇子北端的礁石上，只有涨潮时才能从陆路走到
+      门口。塔身常年被雾浸着，墙根长满青苔，周围渔民避着它走。
+  - id: l_loc_church
+    key_terms: [圣烛堂, 会堂, 老教堂]
+    activation: green
+    token_budget: 100
+    priority: 50
+    content: |
+      圣烛堂：雾港镇上年代最久的建筑，先有圣烛堂后有镇。平时大门紧闭，
+      每周三晚烛火通明。会堂地基高出地面半人，据说底下有旧时代的储藏室。
+  - id: l_loc_pelican
+    key_terms: [鹈鹕号, 埃德加的船]
+    activation: green
+    token_budget: 90
+    priority: 50
+    content: |
+      鹈鹕号：埃德加的老渔船，六十吨木壳，眼下搁在干船坞里大修。船身刷过
+      无数层漆，龙骨是本地最好的橡木，据说能追到上个世纪。
+  - id: l_loc_pier
+    key_terms: [渔市码头, 码头, 渔市]
+    activation: green
+    token_budget: 90
+    priority: 50
+    content: |
+      渔市码头：镇子伸进海里的木栈道，凌晨四点开市。失踪者最后出现的地方，
+      码头尽头最近常有人听见"水里有东西擦着木桩"的声音。
+  - id: l_loc_clinic
+    key_terms: [芬利诊所, 诊所]
+    activation: green
+    token_budget: 90
+    priority: 50
+    content: |
+      芬利诊所：镇上唯一的诊所，临街一间诊室、一间药房、一间档案室。档案柜
+      上着锁，钥匙挂在医生的表链上。
+  - id: l_yellow_1895
+    key_terms: [白雾之夜, 1895, 三十年前, 海难]
+    activation: yellow
+    token_budget: 200
+    priority: 70
+    content: |
+      1895 年白雾之夜：三十年前的 10 月 31 日，一场百年不遇的浓雾封住海湾
+      三天三夜。雾散后，七名渔民失踪，鹈鹕号倾覆在码头外三百米，船上只有
+      埃德加一人活下来——他从此再不出远海，也从不提那晚的事。那年镇上还
+      死了一艘外来的货船，船员名单里有个叫莫罗的水手。
+  - id: l_yellow_ritual
+    key_terms: [仪式, 祭坛, 潮汐石, 献祭]
+    activation: yellow
+    token_budget: 180
+    priority: 65
+    content: |
+      献祭仪式：雾潮之夜，圣烛会以潮汐符文标记祭品，于渔市码头尽头立起潮汐石，
+      以烛火与祷文召唤雾潮之民登岸。仪式若被打断，教团会以暴力补足祭品数；
+      雾潮之民若得不到祭品，会在雾中徘徊猎食，直到涨潮退去。

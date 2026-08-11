@@ -1,0 +1,47 @@
+# electron-builder.yml — DiceKeeper 打包配置（NSIS 安装版 + 便携版）
+# 主进程零外部 npm 依赖（全 node: 内置 + electron），files 只打 dist + package.json
+appId: com.dicekeeper.app
+productName: DiceKeeper
+copyright: Copyright © 2026 DiceKeeper
+
+directories:
+  output: dist-package
+  buildResources: build
+
+files:
+  - dist/**/*
+  - package.json
+
+# 内置规则包/剧本包：复制到 resources/（asar 外，主进程 process.resourcesPath 读取）
+extraResources:
+  - from: rules
+    to: rules
+  - from: scenarios
+    to: scenarios
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  # 无自定义图标时用 electron 默认；后续可在 build/icon.ico 放图标
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: DiceKeeper
+  artifactName: DiceKeeper-Setup-${version}.${ext}
+
+portable:
+  artifactName: DiceKeeper-Portable-${version}.${ext}
+
+npmRebuild: false
+electronLanguages:
+  - zh-CN
+  - en-US

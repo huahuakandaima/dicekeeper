@@ -1,0 +1,34 @@
+{
+  "name": "dicekeeper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/electron/main.cjs",
+  "scripts": {
+    "test": "node --experimental-sqlite --experimental-strip-types --test test/dice.test.ts test/dsl.test.ts test/rules.test.ts test/adjudicate.test.ts test/chargen.test.ts test/gateway.test.ts test/campaign.test.ts test/scenario.test.ts test/memory.test.ts test/packs.test.ts test/yaml-write.test.ts test/personas.test.ts test/sim.test.ts test/move.test.ts test/tension.test.ts test/ollama.test.ts test/net.test.ts",
+    "smoke": "node --experimental-sqlite --experimental-strip-types src/run-play.ts",
+    "build": "vite build -c vite.config.main.ts && vite build",
+    "dist": "npm run build && electron-builder --config electron-builder.yml",
+    "dist:win": "npm run build && electron-builder --config electron-builder.yml --win",
+    "start": "npm run build && electron .",
+    "start:skipbuild": "electron .",
+    "e2e": "vite build -c vite.config.main.ts && electron . --no-sandbox"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  }
+}

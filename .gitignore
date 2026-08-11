@@ -1,0 +1,12 @@
+# 依赖与构建产物
+node_modules/
+dist/
+dist-package/
+
+# 调试残留与本地数据
+data/
+*.log
+
+# 系统
+.DS_Store
+Thumbs.db

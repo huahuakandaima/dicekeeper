@@ -1,0 +1,195 @@
+// test/packs.test.ts — P3a 内容包导入导出（§3.7 Foundry 范式）
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+const HERE = dirname(fileURLToPath(import.meta.url));
+const read = (p: string) => readFileSync(p, 'utf-8');
+import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
+import { loadScenarioPack } from '../src/scenario.ts';
+import { loadRulePack } from '../src/rules.ts';
+
+function makeStore(): { store: PackStore; dir: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'dk-packs-'));
+  return { store: new PackStore(join(dir, 'packs')), dir };
+}
+
+// —— .dk 格式往返 ——
+test('dkContent/parseDk：注释头 manifest + 正文往返', () => {
+  const body = 'id: demo\nname: 演示\n';
+  const dk = dkContent('scenario', body);
+  assert.ok(dk.startsWith('# format: dicekeeper/scenario-pack v1'));
+  const { manifest, body: out } = parseDk(dk);
+  assert.equal(manifest.format, 'dicekeeper/scenario-pack v1');
+  assert.equal(out.trim(), body.trim());
+  // 规则包
+  const dk2 = dkContent('rule', body);
+  assert.ok(parseDk(dk2).manifest.format.includes('rule-pack'));
+});
+
+test('detectPackType：规则包/剧本包/未知', () => {
+  assert.equal(detectPackType({ character_sheet: {}, check_rules: {} }), 'rule');
+  assert.equal(detectPackType({ npc_seeds: [], world: {}, lore_entries: [] }), 'scenario');
+  assert.equal(detectPackType({ foo: 1 }), null);
+});
+
+// —— 校验与依赖检查 ——
+test('validatePackContent：内置雾港疑云导出的 .dk 可往返导入（requires 通过）', () => {
+  const scenario = loadScenarioPack(join(HERE, '..', 'scenarios', 'fogharbor.yaml'));
+  const body = read(join(HERE, '..', 'scenarios', 'fogharbor.yaml'));
+  const dk = dkContent('scenario', body);
+  const r = validatePackContent(dk, ['coc7e']);
+  assert.equal(r.ok, true);
+  assert.equal(r.meta?.id, scenario.id);
+  assert.equal(r.meta?.requires, 'coc7e');
+});
+
+test('validatePackContent：requires 缺失拒绝 + 非法内容拒绝', () => {
+  const body = read(join(HERE, '..', 'scenarios', 'fogharbor.yaml'));
+  const dk = dkContent('scenario', body);
+  // 未安装依赖规则包
+  const r1 = validatePackContent(dk, ['dnd5e']);
+  assert.equal(r1.ok, false);
+  assert.ok((r1.error ?? '').includes('依赖检查'));
+  // 非法内容（缺关键字段）
+  const r2 = validatePackContent(dkContent('scenario', 'id: x\nname: y\n'), ['coc7e']);
+  assert.equal(r2.ok, false);
+  // 无法识别
+  const r3 = validatePackContent('hello world', ['coc7e']);
+  assert.equal(r3.ok, false);
+});
+
+// —— PackStore 存储 ——
+test('PackStore：save/list/load/remove 全链路', () => {
+  const { store, dir } = makeStore();
+  assert.deepEqual(store.listImported(), []);
+  const body = 'id: demo_scenario\nname: 演示剧本\nversion: 1.0\nrequires: coc7e\n';
+  store.save('scenario', { id: 'demo_scenario', name: '演示剧本', version: '1.0', type: 'scenario', isBuiltin: false, requires: 'coc7e' }, body);
+  const list = store.listImported();
+  assert.equal(list.length, 1);
+  assert.equal(list[0].id, 'demo_scenario');
+  assert.equal(list[0].requires, 'coc7e');
+  assert.ok(store.load('scenario', 'demo_scenario')?.includes('demo_scenario'));
+  assert.equal(store.load('scenario', 'nope'), null);
+  store.remove('scenario', 'demo_scenario');
+  assert.deepEqual(store.listImported(), []);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('loadImportedScenario：存储的完整剧本包可加载为 ScenarioPack', () => {
+  const { store, dir } = makeStore();
+  const body = read(join(HERE, '..', 'scenarios', 'fogharbor.yaml'));
+  store.save('scenario', { id: 'fog_harbor', name: '雾港疑云', version: '1.0', type: 'scenario', isBuiltin: false, requires: 'coc7e' }, body);
+  const p = loadImportedScenario(store, 'fog_harbor');
+  assert.ok(p);
+  assert.equal(p?.id, 'fog_harbor');
+  assert.equal(p?.npc_seeds.length, 7);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// —— P3b 编辑器：对象解析/序列化/保存/试跑 ——
+test('parsePackObject / serializePackObject：对象 ↔ .dk 往返', () => {
+  const body = read(join(HERE, '..', 'scenarios', 'fogharbor.yaml'));
+  const obj = parsePackObject('scenario', body) as Awaited<ReturnType<typeof loadScenarioPack>>;
+  assert.equal(obj.id, 'fog_harbor');
+  const dk = serializePackObject('scenario', obj);
+  // 序列化产物可重新校验通过（含依赖检查）
+  const r = validatePackContent(dk, ['coc7e']);
+  assert.equal(r.ok, true, r.error);
+  const back = parsePackObject('scenario', dk) as typeof obj;
+  assert.deepEqual(back, obj);
+});
+
+test('savePackObject：导入包直接覆盖保存', () => {
+  const { store, dir } = makeStore();
+  const body = read(join(HERE, '..', 'scenarios', 'fogharbor.yaml'));
+  const obj = parsePackObject('scenario', body) as Awaited<ReturnType<typeof loadScenarioPack>>;
+  obj.name = '雾港疑云（改版）';
+  obj.hooks[0] = '改过的开场白。';
+  const r = savePackObject({ type: 'scenario', id: 'fog_harbor', isBuiltin: false, obj, store });
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.savedAs, undefined); // 非内置 → 原 id 保存
+  const loaded = loadImportedScenario(store, 'fog_harbor');
+  assert.equal(loaded?.name, '雾港疑云（改版）');
+  assert.equal(loaded?.hooks[0], '改过的开场白。');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('savePackObject：内置剧本包自动另存副本（原包不受影响）', () => {
+  const { store, dir } = makeStore();
+  const obj = parsePackObject('scenario', read(join(HERE, '..', 'scenarios', 'fogharbor.yaml'))) as Awaited<ReturnType<typeof loadScenarioPack>>;
+  obj.name = '雾港疑云·自改版';
+  const r = savePackObject({ type: 'scenario', id: 'fog_harbor', isBuiltin: true, obj, store });
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.savedAs, 'fog_harbor-custom'); // 内置 → 副本 id
+  assert.equal(r.meta?.id, 'fog_harbor-custom');
+  // 副本可加载，且 requires 保留
+  const copy = loadImportedScenario(store, 'fog_harbor-custom');
+  assert.ok(copy);
+  assert.equal(copy?.name, '雾港疑云·自改版');
+  assert.equal(copy?.requires, 'coc7e');
+  assert.equal(copy?.id, 'fog_harbor-custom'); // 内容 id 同步（否则列表按内容 id 识别不到副本）
+  // 原对象未被污染（id 保持原值）
+  assert.equal(obj.id, 'fog_harbor');
+  // 原内置 id 不存在于 store（未被覆盖）
+  assert.equal(store.load('scenario', 'fog_harbor'), null);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('savePackObject：校验失败拒绝保存', () => {
+  const { store, dir } = makeStore();
+  const obj = parsePackObject('scenario', read(join(HERE, '..', 'scenarios', 'fogharbor.yaml'))) as Awaited<ReturnType<typeof loadScenarioPack>>;
+  obj.hooks = []; // 非法：hooks 必须非空
+  const r = savePackObject({ type: 'scenario', id: 'fog_harbor', isBuiltin: false, obj, store });
+  assert.equal(r.ok, false);
+  assert.ok((r.error ?? '').includes('hooks'));
+  assert.deepEqual(store.listImported(), []); // 未落盘
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('testPackCheck：编辑中的规则包对象可直接试跑检定', () => {
+  const obj = parsePackObject('rule', read(join(HERE, '..', 'rules', 'coc7e.yaml'))) as Awaited<ReturnType<typeof loadRulePack>>;
+  const a = testPackCheck(obj, '侦查', 50, 'normal', 'test-seed');
+  assert.ok(['crit_fail', 'extreme', 'hard', 'normal', 'fail'].includes(a.outcome));
+  assert.equal(a.diceRolls.length, 1);
+  assert.ok(a.detail.includes('侦查'));
+  // 惩罚骰：2d100 取高
+  const p = testPackCheck(obj, '侦查', 50, 'penalty', 'test-seed');
+  assert.equal(p.diceRolls.length, 2);
+  // 改了 check_rules 后立即生效（DSL 表达式）
+  obj.check_rules.normal = 'd100 <= 100';
+  const always = testPackCheck(obj, '侦查', 1, 'normal', 'test-seed');
+  assert.ok(['extreme', 'hard', 'normal'].includes(always.outcome));
+});
+
+test('testPackLore：剧本包世界书命中模拟（蓝/绿/黄 + 预算）', () => {
+  const obj = parsePackObject('scenario', read(join(HERE, '..', 'scenarios', 'fogharbor.yaml'))) as Awaited<ReturnType<typeof loadScenarioPack>>;
+  // 蓝灯常驻条目必命中
+  const r = testPackLore(obj, '玩家站在雾港酒馆门口', 3000);
+  assert.ok(r.hits.length > 0);
+  assert.ok(r.hits.some((h) => h.activation === 'blue'));
+  assert.ok(r.used <= r.budget);
+  // 关键词命中绿灯
+  const r2 = testPackLore(obj, '埃德加灌了一口酒', 3000);
+  assert.ok(r2.hits.some((h) => h.id.includes('edgar') || h.activation === 'green' || h.activation === 'blue'));
+  // 预算收紧 → 截断
+  const tight = testPackLore(obj, '埃德加灌了一口酒', 50);
+  assert.ok(tight.used <= 50);
+});
+
+test('testPackDistribution：1000 次档位统计，成功概率 ≈ 技能值', () => {
+  const obj = parsePackObject('rule', read(join(HERE, '..', 'rules', 'coc7e.yaml'))) as Awaited<ReturnType<typeof loadRulePack>>;
+  const d = testPackDistribution(obj, '侦查', 50, 'normal', 1000);
+  assert.equal(d.trials, 1000);
+  const total = Object.values(d.counts).reduce((s, v) => s + v, 0);
+  assert.equal(total, 1000);
+  // CoC：成功 = 极限(≤10) + 困难(≤25) + 普通(≤50)；大失败 ≥96
+  const success = d.counts.extreme + d.counts.hard + d.counts.normal;
+  assert.ok(success >= 420 && success <= 580, `成功率 ${success}% 应在 50% 附近`);
+  assert.ok(d.counts.crit_fail >= 30 && d.counts.crit_fail <= 60, `大失败 ${d.counts.crit_fail}% 应在 5% 附近`);
+  // 失败 = 剩余
+  assert.equal(d.counts.fail, 1000 - success - d.counts.crit_fail);
+});
