@@ -1286,7 +1286,7 @@ name: 中文名称
 version: "1.0"
 dice_schema: d100 或 d20
 character_sheet:
-  attributes: [属性1, 属性2, ...]
+  attributes: [4-8 个中文属性名，禁止空数组、禁止省略]
   derived: [衍生值1, ...]
   skills:
     - {name: 技能名, base: 初始值, category: 分类}

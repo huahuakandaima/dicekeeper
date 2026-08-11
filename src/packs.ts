@@ -281,12 +281,24 @@ export function normalizeGeneratedPack(type: PackType, raw: Record<string, unkno
       merged[k] = { ...((merged.check_rules ?? {}) as object), ...(v as object) };
       continue;
     }
-    // character_sheet：合并（attributes 空数组 → 模板补）
+    // character_sheet：合并（attributes 空数组/空元素 → 模板补；skills 条目缺 name 补占位）
     if (k === 'character_sheet' && typeof v === 'object') {
       const tplCs = (merged.character_sheet ?? {}) as Record<string, unknown>;
       const aiCs = v as Record<string, unknown>;
       const mergedCs: Record<string, unknown> = { ...tplCs, ...aiCs };
-      if (Array.isArray(aiCs.attributes) && (aiCs.attributes as unknown[]).length === 0) mergedCs.attributes = tplCs.attributes;
+      const cleanArr = (arr: unknown): string[] | null => {
+        if (!Array.isArray(arr)) return null;
+        return (arr as unknown[]).map((x) => (typeof x === 'string' ? x.trim() : typeof x === 'number' ? String(x) : '')).filter((s) => s !== '');
+      };
+      const aiAttr = cleanArr(aiCs.attributes);
+      mergedCs.attributes = aiAttr && aiAttr.length > 0 ? aiAttr : (tplCs.attributes ?? []);
+      const aiDerived = cleanArr(aiCs.derived);
+      mergedCs.derived = aiDerived && aiDerived.length > 0 ? aiDerived : (tplCs.derived ?? []);
+      if (Array.isArray(aiCs.skills)) {
+        mergedCs.skills = (aiCs.skills as unknown[]).map((s) =>
+          s && typeof s === 'object' ? { name: '未命名技能', base: 50, category: '通用', ...(s as object) } : s,
+        );
+      }
       merged[k] = mergedCs;
       continue;
     }

@@ -313,3 +313,19 @@ test('PackStore.remove：文件名与内容 id 脱节的旧数据可被兜底删
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// AI 生成规则包：attributes 含空字符串元素 → 清理后保留有效属性
+test('normalizeGeneratedPack：attributes 空元素清理 + 全空回退模板', () => {
+  const ai = { name: '末世', dice_schema: 'd100', character_sheet: { attributes: ['力量', '', '  ', '敏捷'], skills: [{ base: 40 }] }, check_rules: { normal: 'd100 <= SKILL' } };
+  const norm = normalizeGeneratedPack('rule', ai, '末世规则');
+  const cs = norm.character_sheet as Record<string, unknown>;
+  assert.deepEqual(cs.attributes, ['力量', '敏捷'], '空元素被过滤');
+  // skills 条目缺 name → 补占位
+  const skills = cs.skills as { name: string }[];
+  assert.equal(skills[0].name, '未命名技能');
+  // 全空 attributes → 回退模板
+  const ai2 = { name: '末世2', dice_schema: 'd100', character_sheet: { attributes: ['', ''], skills: [{ name: '枪械', base: 40, category: '战斗' }] }, check_rules: { normal: 'd100 <= SKILL' } };
+  const norm2 = normalizeGeneratedPack('rule', ai2, '末世规则');
+  const cs2 = norm2.character_sheet as Record<string, unknown>;
+  assert.ok(Array.isArray(cs2.attributes) && (cs2.attributes as string[]).length >= 4, '全空回退模板属性');
+});
