@@ -152,7 +152,8 @@ export function PackEditor({ type, meta, onClose, onSaved }: Props) {
   const [tlResult, setTlResult] = useState<{ budget: number; used: number; hits: { id: string; activation: string; content: string; priority: number; cost: number }[] } | null>(null);
   // AI 生成
   const [aiPrompt, setAiPrompt] = useState('');
-  const [aiTarget, setAiTarget] = useState('pack');
+  // AI 生成（§11.8：整包或单点，产出草稿人工确认）；规则包只有「整包骨架」目标，初始值按类型对齐（修复误选 pack 报错）
+  const [aiTarget, setAiTarget] = useState(type === 'scenario' ? 'pack' : 'rule-pack');
   const [aiBusy, setAiBusy] = useState(false);
   const [aiDraft, setAiDraft] = useState<{ target: string; field?: string; yaml: string } | null>(null); // 草稿（人工确认后应用）
   // 试跑：成功率分布（§11.3）
