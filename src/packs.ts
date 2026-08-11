@@ -165,8 +165,23 @@ export class PackStore {
   }
 
   remove(type: PackType, id: string): void {
-    const p = join(this.dir, type, `${id}.yaml`);
-    if (existsSync(p)) rmSync(p, { force: true });
+    const dir = join(this.dir, type);
+    const p = join(dir, `${id}.yaml`);
+    if (existsSync(p)) {
+      rmSync(p, { force: true });
+      return;
+    }
+    // 兜底：文件名与内容 id 脱节的旧数据（AI 草稿改过 id 时代产生）——按内容 id 扫描匹配删除
+    if (!existsSync(dir)) return;
+    for (const f of readdirSync(dir).filter((x) => x.endsWith('.yaml'))) {
+      try {
+        const raw = parseYaml(parseDk(readFileSync(join(dir, f), 'utf-8')).body || '') as Record<string, unknown>;
+        if (String(raw.id ?? '') === id) {
+          rmSync(join(dir, f), { force: true });
+          return;
+        }
+      } catch { /* 坏文件跳过 */ }
+    }
   }
 }
 
@@ -350,8 +365,9 @@ export function savePackObject(opts: {
     requires: type === 'scenario' ? (obj as ScenarioPack).requires : undefined,
   };
   try {
-    // 内置副本：对象内容 id 也要同步（列表/加载按内容 id 识别），否则副本永远匹配不上
-    const saveObj = opts.isBuiltin ? { ...(obj as object), id: saveId } : obj;
+    // 内容 id 恒等于文件名 id（列表/加载/删除按内容 id 识别，脱节会导致"删除提示成功但文件还在"）
+    // 非内置包同样强制同步：AI 草稿/用户改过 id 也不允许与文件名脱节
+    const saveObj = { ...(obj as object), id: saveId };
     store.save(type, meta, serializePackObject(type, saveObj as RulePack & ScenarioPack));
   } catch (e) {
     return { ok: false, error: `保存失败: ${(e as Error).message}` };

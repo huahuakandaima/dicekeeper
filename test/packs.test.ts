@@ -1,16 +1,17 @@
 // test/packs.test.ts — P3a 内容包导入导出（§3.7 Foundry 范式）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
+import { serializeYaml } from '../src/yaml-write.ts';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => readFileSync(p, 'utf-8');
 import { PackStore, dkContent, parseDk, validatePackContent, detectPackType, loadImportedScenario, parsePackObject, serializePackObject, savePackObject, buildNewPackTemplate, normalizeGeneratedPack, summarizeRulePackForPrompt, testPackCheck, testPackDistribution, testPackLore } from '../src/packs.ts';
 import { loadScenarioPack } from '../src/scenario.ts';
-import { loadRulePack } from '../src/rules.ts';
+import { loadRulePack, parseYaml } from '../src/rules.ts';
 
 function makeStore(): { store: PackStore; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), 'dk-packs-'));
@@ -276,4 +277,39 @@ test('summarizeRulePackForPrompt：摘要含规则包技能名与检定体系', 
   assert.ok(sum.includes('侦查'), '摘要应含技能名');
   assert.ok(sum.includes('检定规则'), '摘要应含检定体系');
   assert.ok(sum.includes('d100'));
+});
+
+// 修复：保存强制内容 id = 文件名 id（AI 草稿改过 id 不再脱节，删除才删得到）
+test('savePackObject：内容 id 恒等于文件名 id（防"删除但还在"）', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dk-pack-save-'));
+  try {
+    const store = new PackStore(dir);
+    const tpl = buildNewPackTemplate('rule', '测试包', 'rule-a') as Record<string, unknown>;
+    tpl.id = 'rule-ai-generated'; // 模拟 AI 草稿改了 id
+    const r = savePackObject({ type: 'rule', id: 'rule-a', isBuiltin: false, obj: tpl as never, store });
+    assert.equal(r.ok, true, r.error ?? '');
+    const text = store.load('rule', 'rule-a');
+    assert.ok(text, '文件应按传入 id 命名');
+    const raw = parseYaml(parseDk(text!).body) as Record<string, unknown>;
+    assert.equal(raw.id, 'rule-a', '内容 id 被强制纠正为文件名 id');
+    // 按列表 id 删除能删到
+    store.remove('rule', 'rule-a');
+    assert.equal(store.load('rule', 'rule-a'), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// 修复：历史脱节数据（文件名 ≠ 内容 id）删除兜底——按内容 id 扫描删除
+test('PackStore.remove：文件名与内容 id 脱节的旧数据可被兜底删除', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dk-pack-rm-'));
+  try {
+    const store = new PackStore(dir);
+    const body = serializeYaml({ id: 'new-id', name: '脱节包', version: '1.0', dice_schema: 'd100', character_sheet: { attributes: ['A'], skills: [] }, check_rules: { normal: 'd100 <= SKILL' } });
+    writeFileSync(join(dir, 'rule', 'old-name.yaml'), dkContent('rule', body), 'utf-8');
+    store.remove('rule', 'new-id'); // 按内容 id 删除
+    assert.equal(store.load('rule', 'old-name.yaml'), null, '脱节文件被兜底删除');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
