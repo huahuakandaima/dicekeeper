@@ -225,6 +225,32 @@ test('extractNarrativePrefix：narrative 含未转义引号时不截断、不泄
   assert.equal(extractNarrativePrefix(part), '手记里提到的"名单"脱不了干系。他还在等什么');
 });
 
+// JSON 泄露防御（2026-08-11 用户反馈"json泄露"）：
+// ① 数组包裹剥壳 ② YAML 风格值（值未加引号）提取 ③ verify 检测泄露特征
+test('parseStructured：数组包裹 [{"narrative":...}] 剥壳提取', () => {
+  const p = parseStructured('[{"narrative": "数组包裹的叙事", "dice_results": ["x1"]}]');
+  assert.equal(p.narrative, '数组包裹的叙事');
+  assert.deepEqual(p.dice_results, ['x1']);
+});
+
+test('parseStructured：YAML 风格值（"narrative": 文本 未加引号）不落外壳', () => {
+  const p = parseStructured('{"narrative": 你推开酒馆的门，海盐味扑面而来。, "dice_results": []}');
+  assert.equal(p.narrative, '你推开酒馆的门，海盐味扑面而来。');
+});
+
+test('verifyNarrative：叙事含 JSON 结构/内部字段被拦截（narrative_json_leak）', () => {
+  const world = new World('test');
+  // 工具返回结构回显（AI 把 make_check 结果原样复述）
+  const leak1 = verifyNarrative('检定完成：{"dice": "r1", "taken": 42, "verdict": "困难成功"}', world);
+  assert.ok(leak1.some((i) => i.kind === 'narrative_json_leak'));
+  // AI 把系统字段结构原样复述（"dice_results": [...]）
+  const leak2 = verifyNarrative('这是结果："dice_results": ["4c774791"]', world);
+  assert.ok(leak2.some((i) => i.kind === 'narrative_json_leak'));
+  // 正常叙事不误杀（含"检定"等词但无 JSON 结构）
+  const ok = verifyNarrative('你掷出的骰子在桌面上转了几圈，最后停在一个令人紧张的数字上。', world);
+  assert.equal(ok.length, 0);
+});
+
 test('MockProvider 脚本耗尽抛错', async () => {
   const p = new MockProvider('empty', []);
   await assert.rejects(() => p.chat([], []), GatewayError);

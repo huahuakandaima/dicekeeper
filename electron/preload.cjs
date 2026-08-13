@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('dk', {
   check: (args) => ipcRenderer.invoke('check:skill', args),
   checkWithChat: (skill) => ipcRenderer.invoke('check:withChat', skill),
   chat: (action) => ipcRenderer.invoke('chat:send', action),
+  regenerate: () => ipcRenderer.invoke('chat:regenerate'), // 重新生成上一条主持人回复（AI 降智时重来）
   onChunk: (cb) => { ipcRenderer.on('chat:chunk', (_e, text) => cb(text)); },
   onCheck: (cb) => { ipcRenderer.on('chat:check', (_e, info) => cb(info)); },
   scenario: {

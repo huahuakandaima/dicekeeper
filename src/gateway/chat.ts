@@ -167,36 +167,44 @@ function extractJsonArray(text: string, key: string): string[] | null {
 
 // 容错 JSON 解析：优先取 {"narrative" 起点（避免叙事废话里含 { 干扰），退化取第一个 { 到最后一个 }
 export function parseStructured(content: string): ParsedOutput {
-  const keyStart = content.indexOf('{"narrative"');
-  const start = keyStart >= 0 ? keyStart : content.indexOf('{');
-  const end = content.lastIndexOf('}');
+  let text = content;
+  // 数组包裹剥壳（AI 偶发输出 [{"narrative":...}]）：剥最外层 [ ]
+  if (/^\s*\[/.test(text) && /\][\s\n]*$/.test(text)) {
+    const inner = text.trim().slice(1, -1).trim();
+    if (inner.startsWith('{')) text = inner;
+  }
+  const keyStart = text.indexOf('{"narrative"');
+  const start = keyStart >= 0 ? keyStart : text.indexOf('{');
+  const end = text.lastIndexOf('}');
   if (start === -1 || end === -1 || end <= start) {
-    // 非 JSON：整体作为叙事
-    return { narrative: content.trim(), dice_results: [], prompt_player: null };
+    // 非 JSON：整体作为叙事（若含泄露特征，verify 会拦截提示）
+    return { narrative: text.trim(), dice_results: [], prompt_player: null };
   }
   try {
-    const obj = JSON.parse(content.slice(start, end + 1)) as Partial<ParsedOutput>;
+    const obj = JSON.parse(text.slice(start, end + 1)) as Partial<ParsedOutput>;
     return {
-      narrative: (obj.narrative ?? '').trim() || content.slice(0, start).trim(),
+      narrative: (obj.narrative ?? '').trim() || text.slice(0, start).trim(),
       dice_results: Array.isArray(obj.dice_results) ? obj.dice_results.map(String) : [],
       prompt_player: obj.prompt_player ?? null,
     };
   } catch {
     // 解析失败（常见：叙事含未转义引号如 "名单"）：
     // 容错提取三字段——绝不再把含 JSON 外壳的原始全文当 narrative 落库
-    const narrative = extractJsonField(content, 'narrative');
-    const dice = extractJsonArray(content, 'dice_results');
-    const prompt = extractJsonField(content, 'prompt_player');
+    // narrative 值可能未加引号（YAML 风格）——两条链都试，避免空数组命中导致外壳落库
+    const narrative = extractJsonField(text, 'narrative')
+      ?? (/\"narrative"\s*:\s*([^,"}\n][^,"}\n]*)/.exec(text)?.[1]?.trim() ?? null);
+    const dice = extractJsonArray(text, 'dice_results');
+    const prompt = extractJsonField(text, 'prompt_player');
     if (narrative !== null || prompt !== null || dice !== null) {
-      const prefix = content.slice(0, start).trim();
+      const prefix = text.slice(0, start).trim();
       return {
-        narrative: (narrative ?? '').trim() || (prefix || content.trim()),
+        narrative: (narrative ?? '').trim() || (prefix || text.trim()),
         dice_results: dice ?? [],
         prompt_player: prompt ?? null,
       };
     }
-    // 完全提取不到：按纯叙事处理（保留原始文本，校验照常）
-    return { narrative: content.trim(), dice_results: [], prompt_player: null };
+    // 完全提取不到：按纯叙事处理（保留原始文本，校验照常；含泄露特征时 verify 拦截）
+    return { narrative: text.trim(), dice_results: [], prompt_player: null };
   }
 }
 
@@ -207,6 +215,8 @@ export function extractNarrativePrefix(acc: string): string {
   // 剥 code fence（AI 有时输出 ```json ... ```）：避免 ```json 与 JSON 外壳泄漏到界面
   const fence = /^```(?:json|yaml)?\s*/.exec(s);
   if (fence) s = s.slice(fence[0].length);
+  // 数组包裹 [{"narrative":...}]：剥最外层 [（结尾 ] 在流式结束时出现，交给末尾剥壳）
+  if (s.startsWith('[{')) s = s.slice(1);
   // AI 先输出废话再 JSON（"好的，{"narrative":"..."}"）：定位 JSON 起点，保留废话 + 提取叙事
   const jsonStart = s.indexOf('{"narrative"');
   if (jsonStart > 0) {

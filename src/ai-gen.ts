@@ -30,7 +30,7 @@ npc_seeds: 4-6 个 [{name, aliases, traits, secrets, relation_hint}]
 locations: 4-6 个 [{name, aliases, state, secrets}]
 plot_threads: 3-4 个 [{id, name, status: open, branches: [..]}]
 encounters: 3-5 个 [{name, type: social|combat|exploration, skill, note}]
-hooks: 2-3 条叙事开场白
+hooks: 2-3 条叙事开场白（第一条必须包含对玩家可行动作的引导，如"你可以：去某地 / @某人 聊聊 / 查看周围"，让新手一看就知道能做什么）
 lore_entries: 8-12 条 [{id, key_terms: [3-5 个关键词], activation: blue|green|yellow, content, priority}]
 格式约束：缩进两空格；list 项用 "key: value" 展开；多行文本用 | 块标量或单行；全中文内容。`,
   },
@@ -49,7 +49,7 @@ npc_seeds: 4-6 个 [{name, aliases, traits, secrets, relation_hint}]
 locations: 4-6 个 [{name, aliases, state, secrets}]
 plot_threads: 3-4 个 [{id, name, status: open, branches: [..]}]
 encounters: 3-5 个 [{name, type: social|combat|exploration, skill: <规则包技能名>, note}]
-hooks: 2-3 条叙事开场白
+hooks: 2-3 条叙事开场白（第一条必须包含对玩家可行动作的引导，如"你可以：去某地 / @某人 聊聊 / 查看周围"，让新手一看就知道能做什么）
 lore_entries: 8-12 条 [{id, key_terms: [3-5 个关键词], activation: blue|green|yellow, content, priority}]
 格式约束：缩进两空格；全中文内容。`,
   },
@@ -140,7 +140,7 @@ encounters:
 格式：
 hooks:
   - 第一条开场白（第一人称/第二人称混合，营造氛围并引导行动）
-格式约束：每条一句到两句话，全中文；不要输出解释文字。`,
+格式约束：第一条末尾必须包含对玩家可行动作的引导（如"你可以：去某地 / @某人 聊聊 / 查看周围"），让新手一看就知道能做什么；每条一句到两句话，全中文；不要输出解释文字。`,
   },
   plot_threads: {
     label: '剧情线索',

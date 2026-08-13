@@ -576,9 +576,12 @@ export function App() {
     // 开场白：战役剧本包的 hooks（P2）；旧战役（无剧本包）回退硬编码开场
     const meta = (await window.dk.campaign.list()).find((c) => c.id === id);
     // 用局部 info 而非 scenario state（setScenario 异步，同函数内闭包仍是旧值=内置雾港）
+    // 新手引导：hooks 未自带"你可以"行动引导时，附加通用引导（按剧本包首地点/首 NPC）
+    const guide = (place?: string | null, person?: string | null) =>
+      `——冒险开始了。你可以：去${place ?? '周围'}看看 / @${person ?? '某人'} 聊聊 / 查看四周。`;
     const opening = meta?.scenarioPackId && info
-      ? `${info.hooks[0]}\n——冒险开始了。`
-      : `雾港的钟声敲了三下。你（${chars[0]?.name ?? '无名调查员'}）推开酒馆的门，海盐与烟味扑面而来。老船长埃德加坐在角落，抬眼看向你。\n——冒险开始了。`;
+      ? `${info.hooks[0]}\n${info.hooks[0].includes('你可以') ? '——冒险开始了。' : guide(info.place, info.person)}`
+      : `雾港的钟声敲了三下。你（${chars[0]?.name ?? '无名调查员'}）推开酒馆的门，海盐与烟味扑面而来。老船长埃德加坐在角落，抬眼看向你。\n${guide(info?.place, info?.person)}`;
     setMsgs([{ role: 'keeper', text: opening }]);
     refreshAudit();
   }
@@ -622,6 +625,26 @@ export function App() {
       if (r.issues.length > 0) setNotice(`⚠ 校验拦截 ${r.issues.length} 处：${r.issues.map((i) => i.message).join('；')}`);
     } catch (e) {
       setMsgs((m) => [...m, { role: 'keeper', text: `（提示）${(e as Error).message.replace(/^Error invoking remote method '[^']+':\s*/, '')}` }]);
+    }
+    setPendingText('');
+    setBusy(false);
+    refreshAudit();
+  }
+
+  // 重新生成上一条主持人回复（AI 降智时可重来）：后端重发最后一条玩家行动并删除旧回复，这里替换显示
+  async function regenerate() {
+    if (!campaignId || busy) return;
+    setBusy(true);
+    setPendingText('');
+    try {
+      const r = await window.dk.regenerate();
+      setMsgs((m) => {
+        const next = m.slice(0, -1); // 去掉旧回复（最后一条）
+        return [...next, { role: 'keeper' as const, text: r.narrative, dice: r.diceResults, issues: r.issues, prompt: r.promptPlayer }];
+      });
+      if (r.issues.length > 0) setNotice(`⚠ 校验拦截 ${r.issues.length} 处：${r.issues.map((i) => i.message).join('；')}`);
+    } catch (e) {
+      setNotice(`重新生成失败：${(e as Error).message.replace(/^Error invoking remote method '[^']+':\s*/, '')}`);
     }
     setPendingText('');
     setBusy(false);
@@ -863,6 +886,10 @@ export function App() {
           </div>
           {/* 修复：onClick 曾直接绑 send —— React 会把 click 事件当 optText 传入导致 TypeError 静默失败（"发送键不管用只能回车"） */}
           <button className="primary" onClick={() => send()} disabled={busy}>{busy ? `${gmTitle}思考中…` : '发送'}</button>
+          {/* 重新生成上一条回复（AI 降智时重来）：最后一条是主持人回复时显示 */}
+          {!roomJoined && msgs.length > 0 && msgs[msgs.length - 1].role === 'keeper' && (
+            <button className="ghost" onClick={() => void regenerate()} disabled={busy} title="重发上一条行动并重新生成回复">↻ 重新生成</button>
+          )}
         </div>
         {notice && <div className="notice">{notice}</div>}
       </main>

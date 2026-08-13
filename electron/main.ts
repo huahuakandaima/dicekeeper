@@ -895,7 +895,7 @@ ipcMain.handle('check:skill', (_e, args: { skill: string; mode?: 'normal' | 'rew
 
 // 玩家回合主链路（chat:send 与 check:withChat 共用）：落库 → 记忆/lore 组装 → 流式 AI 叙事 → 兜底 → 摘要触发
 // action：玩家可见文本（落库/恢复历史/提及检测用）；aiAction：AI 指令（默认=action；检定场景分离，避免内部指令泄漏给玩家）
-async function runPlayerTurn(action: string, aiAction?: string, source?: string): Promise<PlayerTurnResult> {
+async function runPlayerTurn(action: string, aiAction?: string, source?: string, skipUserLog = false): Promise<PlayerTurnResult> {
   if (!activeCampaignId) throw new Error('还没有当前战役：请先在左侧「新建战役」或选择一个已有战役');
   if (!activeSessionId) throw new Error('还没有当前会话：请先选择/新建战役，系统会自动开始会话');
   const campaign = store.loadCampaign(activeCampaignId);
@@ -908,8 +908,11 @@ async function runPlayerTurn(action: string, aiAction?: string, source?: string)
   const history = toChatMessages(trimHistoryToWindow(store.getMessages(activeCampaignId, activeSessionId)));
 
   // 玩家行动先落库（玩家可见文本；联机玩家消息带 [昵称] 来源，AI 上下文可区分发言人）
-  const userContent = source ? `[${source}] ${action}` : action;
-  store.appendMessage(activeCampaignId, activeSessionId, { role: 'user', content: userContent });
+  // skipUserLog=true（重新生成）：玩家消息已存在，只重发不重复落库
+  if (!skipUserLog) {
+    const userContent = source ? `[${source}] ${action}` : action;
+    store.appendMessage(activeCampaignId, activeSessionId, { role: 'user', content: userContent });
+  }
 
   const msgs = store.getMessages(activeCampaignId, activeSessionId);
 
@@ -1073,6 +1076,22 @@ function fallbackNarrative(action: string, provider: Provider, raw: string): str
 // 房主开房时：房主消息也进串行队列（与玩家消息统一，防并发写库）；单机照旧直走
 ipcMain.handle('chat:send', (_e, action: string) =>
   room ? enqueueRoomTurn({ text: String(action ?? '') }) : runPlayerTurn(String(action ?? '')));
+
+// 重新生成上一条主持人回复（AI 降智时重来）：重发最后一条玩家行动（新 seed → 新结果），
+// 删除旧回复（仅当它位于该玩家行动之后）再由 runPlayerTurn 落库新回复
+ipcMain.handle('chat:regenerate', async () => {
+  if (!activeCampaignId) throw new Error('还没有当前战役');
+  if (!activeSessionId) throw new Error('还没有当前会话');
+  const rows = store.db.prepare('SELECT id, role, content FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 50')
+    .all(activeSessionId) as { id: number; role: string; content: string }[];
+  const lastUser = rows.find((m) => m.role === 'user');
+  if (!lastUser) throw new Error('没有可重新生成的消息（先发送一条行动）');
+  const lastAssistant = rows.find((m) => m.role === 'assistant' && m.id > lastUser.id);
+  if (lastAssistant) store.db.prepare('DELETE FROM messages WHERE id = ?').run(lastAssistant.id);
+  // skipUserLog：玩家消息已存在，重发不重复落库（否则消息数 +1 且历史出现重复行动）
+  const out = await runPlayerTurn(String(lastUser.content), undefined, undefined, true);
+  return out;
+});
 
 // 检定接剧情（方案 §5 会话流程：本地判定 → 结果附进请求 → AI 基于结果叙事）：
 // 本地执行检定（审计）→ 推送 chat:check 供 UI 立即显示 → AI 继续剧情（流式）
@@ -1694,9 +1713,20 @@ function createWindow(): void {
           const vals = Object.values(p.attributes);
           return JSON.stringify({ gm: f.gmTitle, attrs: f.attributes.length, min: Math.min(...vals), max: Math.max(...vals), occ: p.occupation });
         })`);
+        // 重新生成（AI 降智重来）：chat 后 regenerate——删旧回复+重发，消息数不变、返回叙事
+        const r42 = await js(`window.dk.session.start().then(async (s) => {
+          await window.dk.session.open(s.id);
+          await window.dk.chat('测试重新生成功能');
+          const list = await window.dk.session.list();
+          const d1 = await window.dk.session.open(list[0].id);
+          const before = d1.messages.length;
+          const r = await window.dk.regenerate();
+          const d2 = await window.dk.session.open(list[0].id);
+          return JSON.stringify({ before, after: d2.messages.length, ok: r.narrative.length > 0 });
+        })`);
         // 窗口标题带版本号（用户要求）：preventDefault 后 HTML title 不覆盖，标题 = DiceKeeper v<版本>
         const r38 = win.getTitle();
-        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 技能按钮类型=' + r37 + ' GM称谓=' + r39 + ' 单项重骰=' + r40 + ' 内置dnd5e=' + r41 + ' 窗口标题=' + r38 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
+        const line = '[DiceKeeper-E2E] 建团=' + r1 + ' 打开=' + r1b + ' 会话=' + r2 + ' 检定=' + r3 + ' 对话=' + r4 + ' 骰子审计=' + r5 + ' 剧本种子=' + r6 + ' 剧本信息=' + r7 + ' 历史恢复=' + r8 + ' 车卡预览=' + r9 + ' 车卡重骰=' + r10 + ' 设置持久化=' + r11 + ' 结束会话摘要=' + r12 + ' 新会话注入=' + r13 + ' 记忆面板=' + r14 + ' 测试连接=' + r15 + ' 手填车卡=' + r16 + ' 非法拒收=' + r17 + ' 检定接剧情=' + r18 + ' UI渲染=' + r19 + ' onCheck事件=' + r20 + ' 编造ID清洗=' + r21 + ' 检定消息干净=' + r30 + ' 移动识别=' + r31 + ' 本地模式IPC=' + r32 + ' 联机往返=' + r33 + ' 换规则包建团=' + r34 + ' 剧本包开场=' + r35 + ' 绑定校验=' + r36 + ' 技能按钮类型=' + r37 + ' GM称谓=' + r39 + ' 单项重骰=' + r40 + ' 内置dnd5e=' + r41 + ' 重新生成=' + r42 + ' 窗口标题=' + r38 + ' 编辑器打开=' + r22 + ' 编辑器保存副本=' + r23 + ' 试跑检定=' + r24 + ' 试跑世界书=' + r25 + ' 试跑分布=' + r26 + ' 变更回滚=' + r27 + ' 人格包=' + r28 + ' 导入冲突=' + r29;
         console.log(line);
         try { writeFileSync(join(app.getPath('temp'), 'dk-e2e-result.txt'), line, 'utf-8'); } catch { /* 非关键 */ }
       } catch (e) {

@@ -45,6 +45,7 @@ declare global {
       check: (args: { skill: string; mode?: 'normal' | 'reward' | 'penalty' }) => Promise<CheckResult>;
       checkWithChat: (skill: string) => Promise<{ check: CheckResult; narrative: string; diceResults: string[]; issues: { kind: string; message: string }[]; promptPlayer?: string | null }>;
       chat: (action: string) => Promise<{ narrative: string; diceResults: string[]; issues: { kind: string; message: string }[]; promptPlayer?: string | null }>;
+      regenerate: () => Promise<{ narrative: string; diceResults: string[]; issues: { kind: string; message: string }[]; promptPlayer?: string | null }>; // 重新生成上一条主持人回复
       onChunk: (cb: (text: string) => void) => void; // 流式叙事逐段回调
       onCheck: (cb: (info: { skill: string; value: number; label: string; detail: string; takenRoll: number }) => void) => void; // 检定结果推送（AI 叙事前先显示骰面）
       scenario: {
