@@ -1,22 +1,24 @@
-# DiceKeeper 项目记忆（来自 WorkBuddy 迁移，2026-08-11）
+# DiceKeeper 项目记忆
 
-> 权威交接文档：`.zcode/reference/2026-08-11-12-04-44/HANDOFF.md`（新会话先读它，覆盖之前所有版本）
+> 权威交接文档：同目录 `HANDOFF.md`（新会话先读它）
 > 技术方案蓝本：`.zcode/reference/2026-08-10-20-31-09/.workbuddy/artifacts/DiceKeeper跑团框架技术方案.md`
-> 本工作区的 dicekeeper 是桌面 `C:\Users\28917\Desktop\dicekeeper\` 的副本；**项目唯一权威位置是桌面那份**（git 仓库，remote=github.com/huahuakandaima/dicekeeper）。改代码、测试、push 都在桌面那份做。
-> **适用边界**：本文件来自 WorkBuddy 环境；「沙箱 unset 三连」等坑在 ZCode 环境是否适用需实际验证。
+> **项目位置：本工作区 `C:\Users\28917\.zcode\workspace\default\dicekeeper\`（唯一位置，git 仓库，remote=github.com/huahuakandaima/dicekeeper）。改代码、测试、push 都在这里做。**
+> 工具链（2026-08-14 重装后）：git = `C:\Program Files\Git\cmd\git.exe`（PATH 已有）、gh = `C:\Program Files\GitHub CLI\gh.exe`、node/npm = `C:\Program Files\nodejs`（node v24.19.0）。**不再有 .workbuddy 目录**（旧命令里的 PortableGit/node 路径已失效）。
 
 ## 项目是什么
 - DiceKeeper：AI 主持人跑团（TRPG）框架。玩家与 LLM 扮演的 KP 跑团；**判定本地化铁律：AI 无权改判定结果**（掷骰/成败全本地），AI 只做叙事与世界操作。
 - 技术栈：纯 TypeScript 引擎（Node ≥22.6 原生 type-stripping）、node:sqlite、Electron 43.3 + Vite 8 + React 19；引擎层与主进程零 npm 运行时依赖（WS 服务器自实现）。
-- 已发布 GitHub 公开仓库（MIT）：https://github.com/huahuakandaima/dicekeeper（用户 GitHub：huahuakandaima）
-- 当前进度：Phase 0~P6 + code-review backlog 全部完成（内置 dnd5e 双规则包、单项重骰、AI 生成 plot_threads/tables、串行队列/规则匹配/称谓下沉引擎层、AI target 单表、衍生公式告警）；测试 **204/204** 全绿；CI 自动发版 + 版本号自动写回仓库；用户实测反馈循环中。
+- 已发布 GitHub 公开仓库（MIT）：https://github.com/huahuakandaima/dicekeeper（用户 GitHub：huahuakandaima；gh 已登录）
+- 当前进度：Phase 0~P6 + code-review backlog 全部完成（内置 dnd5e 双规则包、单项重骰、AI 生成 plot_threads/tables、串行队列下沉、AI target 单表、衍生公式告警、JSON 泄露防御、开场引导、重新生成按钮）；测试 **207/207** 全绿；**v0.1.40 已发布**（CI 自动发版 + 版本号自动写回仓库）；用户实测反馈循环中。
 
-## 关键命令（在桌面 dicekeeper 目录）
-- 全量测试：`npm test`（18 文件 184 项）
+## 关键命令（在本工作区 dicekeeper 目录）
+- 全量测试：`npm test`（18 文件 207 项）
 - 构建：`npm run build`（新增 node: 模块后检查 `vite.config.main.ts` external 列表！）
-- E2E：`unset ELECTRON_RUN_AS_NODE && export DK_E2E=1 && node_modules/.bin/electron.cmd . --no-sandbox > e2e.log 2>&1`（结果 `%TEMP%\dk-e2e-result.txt`；**先 grep 失败于步骤**）
+- 首次运行：`npm install`（Electron 二进制大，用 `set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 加速——**注意 cmd 里 set 后别跟空格再 &&**，会把空格带进变量值导致下载 URL 变 %20）
+- 启动：`npm run start:skipbuild`（桌面有 `DiceKeeper-开发版.bat` 一键启动）
+- E2E：`set DK_E2E=1 && node_modules\.bin\electron.cmd . --no-sandbox > e2e.log 2>&1`（结果 `%TEMP%\dk-e2e-result.txt`；**先 grep 失败于步骤**）
 - 发布：改代码 → `npm test` → `npm run build` → `git push`（CI 自动打包递增版本发 Release）
-- 沙箱内 unset 三连放命令最前：`unset CODEBUDDY_SESSION_ID && unset CLAUDE_SESSION_ID && export NODE_OPTIONS=""`
+- git 直连 GitHub 不稳时走代理：`git -c http.proxy=http://127.0.0.1:7897 push origin main`（Clash 7897）
 
 ## 致命坑（绝对不要踩）
 1. **deepseek-v4-flash 对 max_tokens 返回空 content**（HTTP 200 但 content 空）→ provider.chat/aiGenerate 一律不传 maxTokens
