@@ -301,7 +301,6 @@ test('scenarioRuleMatch：requires 匹配/空/错配', () => {
   assert.equal(scenarioRuleMatch({ requires: undefined }, 'rule-nba'), true); // 无 requires 视为通用
   assert.equal(scenarioRuleMatch(null, 'rule-nba'), true);                   // 无剧本包
 });
-
 test('ensureChargen：老规则包缺 chargen → 加载兜底补全，直接可车卡（中文属性不脱节）', () => {
   // 模拟修复前创建的包（validateRulePack 放行、无 chargen）
   const old = {

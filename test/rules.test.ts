@@ -191,3 +191,4 @@ test('checkDerivedFormulas：合法公式通过；引用未定义字段给出告
   // 无 chargen/无公式 → 直接通过
   assert.equal(checkDerivedFormulas(base as never).ok, true);
 });
+});

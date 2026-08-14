@@ -268,7 +268,6 @@ export function loadImportedRulePack(store: PackStore, id: string): RulePack | n
 export function scenarioRuleMatch(sc: { requires?: string } | null | undefined, rulePackId: string): boolean {
   return !sc || !sc.requires || sc.requires === rulePackId;
 }
-
 // 老包兼容（2026-08-11 修复）：修复前创建的规则包可能缺 chargen（模板/AI 生成时代，车卡/衍生/手填
 // 全链依赖 attribute_methods + occupations 非空）——加载时兜底补全，老包直接可用，无需重新编辑
 export function ensureChargen(pack: RulePack): RulePack {
